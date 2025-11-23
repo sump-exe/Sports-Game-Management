@@ -1,22 +1,8 @@
-"""
-DB-backed settings module.
-
-Behavior:
-- Settings are persisted into the application's SQLite DB (theDB.mydb).
-- open_settings_popup(parent) opens a modal dialog to edit settings.
-- When the user saves settings, a messagebox informs them that settings were saved
-  and they must log in again. The settings popup is closed and the main UI is reset
-  to the login screen by invoking mainGui.show_login_screen(). This makes the login
-  screen the only visible UI in the application.
-
-Public API:
-- get_settings() -> dict
-- save_settings(dict) -> bool
-- open_settings_popup(parent) -> CTkToplevel
-"""
+import os
+import sys
 import customtkinter as ctk
 from tkinter import messagebox
-from theDB import *
+from theDB import mydb
 
 # Default settings
 _DEFAULTS = {
@@ -25,6 +11,9 @@ _DEFAULTS = {
 }
 
 _TABLE_NAME = "app_settings"
+
+# Track the last popup so we can close it before opening another (single instance)
+_last_popup_window = None
 
 # -----------------------
 # Database helpers
@@ -133,18 +122,16 @@ def save_settings(settings: dict) -> bool:
 # -----------------------
 # UI: Settings popup
 # -----------------------
-# Track the last popup so we can close it before opening another (single instance)
-_last_popup_window = None
-
 def open_settings_popup(parent=None):
     """
     Open a modal settings dialog (CTkToplevel). Parent should be the main app window.
 
-    When settings are saved:
-      - show message "Settings have been saved. Please log in again."
-      - close the settings popup
-      - call mainGui.show_login_screen() so the login UI becomes the only UI visible
-        (this resets the main window contents to the login screen).
+    When the user saves settings:
+      - settings are saved to DB
+      - a messagebox informs the user they must log in again
+      - the settings popup is closed
+      - the current process is restarted (os.execv) which closes the old main window
+        and starts a fresh instance (the new process will open the login UI).
     """
     global _last_popup_window
 
@@ -243,64 +230,37 @@ def open_settings_popup(parent=None):
             "seasons_enabled": bool(seasons_var.get())
         }
         ok = save_settings(new_settings)
-        if ok:
-            # Inform user they must log in again
-            try:
-                messagebox.showinfo("Settings Saved", "Settings have been saved. Please log in again.")
-            except Exception:
-                pass
-
-            # Close the settings popup
-            try:
-                win.destroy()
-            except Exception:
-                pass
-
-            # Clear the tracked popup reference
-            global _last_popup_window
-            _last_popup_window = None
-
-            # Attempt to reset the main UI to the login screen.
-            # Import mainGui here (deferred to avoid circular import at module load time).
-            try:
-                import mainGui as mg
-                # Call the show_login_screen function which rebuilds the main window content to the login screen.
-                if hasattr(mg, "show_login_screen"):
-                    try:
-                        mg.show_login_screen()
-                        # bring main window to front if possible
-                        try:
-                            if hasattr(mg, "app") and mg.app:
-                                try:
-                                    mg.app.deiconify()
-                                    mg.app.lift()
-                                    mg.app.focus_force()
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                    except Exception:
-                        # If calling show_login_screen fails, try to destroy the main window so only a new login may be created by the app restart.
-                        try:
-                            if hasattr(mg, "app") and mg.app:
-                                mg.app.destroy()
-                        except Exception:
-                            pass
-                else:
-                    # If mainGui doesn't expose show_login_screen, try to destroy the main window so user will restart app
-                    try:
-                        if hasattr(mg, "app") and mg.app:
-                            mg.app.destroy()
-                    except Exception:
-                        pass
-            except Exception:
-                # If we can't import mainGui, notify the user that they should restart the app.
-                try:
-                    messagebox.showinfo("Restart Required", "Settings saved but the application could not be reset programmatically. Please restart the application to apply changes.")
-                except Exception:
-                    pass
-        else:
+        if not ok:
             messagebox.showerror("Settings", "Failed to save settings.")
+            return
+
+        # Inform user they must log in again
+        try:
+            messagebox.showinfo("Settings Saved", "Settings have been saved. Please log in again.")
+        except Exception:
+            pass
+
+        # Close settings popup (so the window is gone in the outgoing process)
+        try:
+            win.destroy()
+        except Exception:
+            pass
+
+        # Clear tracked popup ref
+        global _last_popup_window
+        _last_popup_window = None
+
+        # Restart the running Python process to ensure the old main window is closed
+        # and a fresh instance (showing login) is started.
+        try:
+            python = sys.executable
+            os.execv(python, [python] + sys.argv)
+        except Exception:
+            # If execv fails for any reason, notify the user to restart manually.
+            try:
+                messagebox.showinfo("Restart Required", "Settings saved but we could not restart the application automatically. Please restart the application to apply changes.")
+            except Exception:
+                pass
 
     ctk.CTkButton(btn_frame, text="Save", command=on_save, width=100).pack(side="right", padx=(6,12), pady=8)
     ctk.CTkButton(btn_frame, text="Cancel", command=on_cancel, width=100).pack(side="right", padx=6, pady=8)
