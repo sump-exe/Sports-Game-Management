@@ -89,7 +89,7 @@ def show_team_players(team_name, players_frame):
         # update in-memory and UI
         teams.pop(team_name, None)
         try:
-            from file5 import standings as _standings
+            from standingsTab import standings as _standings
             _standings.pop(team_name, None)
         except Exception:
             pass
@@ -451,7 +451,7 @@ def open_add_team_popup(prefill_name=None):
         load_teams_from_db()
         # update standings key if renamed
         try:
-            from file5 import standings as _standings
+            from standingsTab import standings as _standings
             if editing and original_name and original_name in _standings:
                 _standings[name] = _standings.pop(original_name)
             elif name not in _standings:

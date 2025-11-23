@@ -220,7 +220,7 @@ def schedule_game():
     # reload scheduled games from DB and refresh UI
     load_scheduled_games_from_db()
     try:
-        from file4 import refresh_scheduled_games_table as _refresh_table
+        from viewGamesTab import refresh_scheduled_games_table as _refresh_table
         _refresh_table(refs.get('scheduled_games_table'))
     except Exception:
         pass

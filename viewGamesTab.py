@@ -130,8 +130,8 @@ def edit_scheduled_game(index):
         d = date_entry.get().strip()
         # validate inputs
         try:
-            from file1 import teams as _teams
-            from file2 import venues as _venues
+            from teamsTab import teams as _teams
+            from venuesTab import venues as _venues
         except Exception:
             _teams = {}
             _venues = {}
@@ -186,9 +186,9 @@ def edit_scheduled_game(index):
 
         # reload from DB and refresh UI
         try:
-            from file3 import load_scheduled_games_from_db as _load
+            from scheduleGameTab import load_scheduled_games_from_db as _load
             _load()
-            from file4 import refresh_scheduled_games_table as _refresh
+            from viewGamesTab import refresh_scheduled_games_table as _refresh
             _refresh(refs.get('scheduled_games_table'))
         except Exception:
             pass
@@ -217,7 +217,7 @@ def delete_scheduled_game(index):
             except Exception:
                 pass
         try:
-            from file3 import load_scheduled_games_from_db as _load
+            from scheduleGameTab import load_scheduled_games_from_db as _load
             _load()
             refresh_scheduled_games_table(refs.get('scheduled_games_table'))
         except Exception:
