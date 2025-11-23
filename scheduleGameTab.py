@@ -2,6 +2,11 @@ import customtkinter as ctk
 from tkinter import messagebox
 from datetime import datetime
 from theDB import *
+# Use DB-backed settings (module created previously)
+try:
+    import settings
+except Exception:
+    settings = None
 
 # This module provides scheduling functions. It expects mainGui.py to set:
 #   app, sched_mgr, refs, teams (from file1), venues (from file2)
@@ -55,7 +60,39 @@ def load_scheduled_games_from_db():
     cur.close()
 
 def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
-    team_names = list(teams.keys())
+    """
+    Populate the option menus used when scheduling a game.
+    Only include teams whose roster size exactly equals the configured team_size
+    (from settings). If settings cannot be read, falls back to including all teams.
+    """
+    # Determine required team size from settings (DB-backed), default to None -> no filtering
+    required_size = None
+    try:
+        if settings:
+            cfg = settings.get_settings() or {}
+            required_size = cfg.get("team_size", None)
+    except Exception:
+        required_size = None
+
+    # team_names initially all team keys
+    team_names_all = list(teams.keys())
+
+    if required_size is None:
+        team_names = team_names_all
+    else:
+        # filter teams that have exact roster length equal to required_size
+        filtered = []
+        for t in team_names_all:
+            roster = teams.get(t, [])
+            # roster might be a list of dicts or strings; use len()
+            try:
+                if len(roster) == int(required_size):
+                    filtered.append(t)
+            except Exception:
+                # if something unexpected, skip filtering for this team (be conservative)
+                continue
+        team_names = filtered
+
     # Protect against None widgets
     if hasattr(team1_opt, "configure"):
         team1_opt.configure(values=team_names)
@@ -194,6 +231,31 @@ def schedule_game():
     if end_dt <= start_dt:
         messagebox.showwarning("Invalid", "End time must be after start time.")
         return
+
+    # Enforce settings: ensure both teams have exactly the configured team_size players
+    required_size = None
+    try:
+        if settings:
+            cfg = settings.get_settings() or {}
+            required_size = cfg.get("team_size", None)
+    except Exception:
+        required_size = None
+
+    if required_size is not None:
+        # lookup roster lengths (teams dict is wired in by mainGui)
+        roster1 = teams.get(t1, [])
+        roster2 = teams.get(t2, [])
+        len1 = len(roster1) if roster1 is not None else 0
+        len2 = len(roster2) if roster2 is not None else 0
+        try:
+            req = int(required_size)
+        except Exception:
+            req = None
+
+        if req is not None:
+            if len1 != req or len2 != req:
+                messagebox.showwarning("Invalid Teams", f"Both teams must have exactly {req} players to schedule a game.\nSelected teams have: {t1}={len1}, {t2}={len2}.")
+                return
 
     # Persist to DB: find ids for team names and venue
     cur = sched_mgr.mydb.cursor()

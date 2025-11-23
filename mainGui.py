@@ -18,6 +18,9 @@ app.geometry("1200x700")  # Increased size for better layout
 # Database-backed schedule manager
 sched_mgr = ScheduleManager()
 
+# Import settings module (DB-backed settings)
+import settings
+
 # Import UI modules AFTER creating app, sched_mgr and refs to avoid circular imports.
 # Each module is written so mainGui will set module-level attributes to wire them together.
 import teamsTab as file1
@@ -108,6 +111,16 @@ def show_main_interface():
     # header bar (logout + toggle)
     header = ctk.CTkFrame(app)
     header.pack(fill="x", padx=8, pady=8)
+
+    # Settings button on the left side of the title
+    def open_settings():
+        try:
+            settings.open_settings_popup(app)
+        except Exception as e:
+            messagebox.showwarning("Settings", f"Could not open settings: {e}")
+
+    ctk.CTkButton(header, text="Settings", command=open_settings, width=100).pack(side="left", padx=(10,6))
+
     ctk.CTkLabel(header, text="Game Scheduler System", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=(10,12))
 
     def do_logout():
