@@ -2,9 +2,9 @@
 Minimal DB-backed settings module.
 
 Purpose:
-- Persist two simple settings: team_size (int) and seasons_enabled (bool).
-- Provide an open_settings_popup(parent) that only:
-    * validates and saves the settings to DB
+- Persist one setting: team_size (int).
+- Provide an open_settings_popup(parent) that:
+    * validates and saves the setting to DB
     * closes the settings popup
     * calls any registered on-change callbacks so callers (mainGui/scheduleGameTab)
       can update UI in-place. This avoids importing mainGui inside settings
@@ -16,8 +16,7 @@ from theDB import mydb
 
 # Defaults
 _DEFAULTS = {
-    "team_size": 12,
-    "seasons_enabled": True
+    "team_size": 12
 }
 _TABLE_NAME = "app_settings"
 
@@ -116,12 +115,6 @@ def get_settings():
         out["team_size"] = int(ts) if ts is not None else _DEFAULTS["team_size"]
     except Exception:
         out["team_size"] = _DEFAULTS["team_size"]
-    se = raw.get("seasons_enabled")
-    if se is None:
-        out["seasons_enabled"] = _DEFAULTS["seasons_enabled"]
-    else:
-        s = str(se).strip().lower()
-        out["seasons_enabled"] = s in ("1", "true", "yes", "on")
     return out
 
 
@@ -133,8 +126,6 @@ def save_settings(settings: dict) -> bool:
         except Exception:
             ts = _DEFAULTS["team_size"]
         ok = ok and _save_key_value("team_size", ts)
-    if "seasons_enabled" in settings:
-        ok = ok and _save_key_value("seasons_enabled", 1 if bool(settings["seasons_enabled"]) else 0)
     if ok:
         # If save succeeded, notify registered callbacks so UI can update in-place.
         try:
@@ -148,7 +139,7 @@ def save_settings(settings: dict) -> bool:
 # UI: settings popup
 # -----------------------
 def open_settings_popup(parent=None):
-    """Open the Settings popup (team size, seasons enabled).
+    """Open the Settings popup (team size only).
     Safe version: NO grab_set(), NO grab_release(), avoids logout misfire.
     """
 
@@ -166,7 +157,7 @@ def open_settings_popup(parent=None):
     # Create popup
     win = ctk.CTkToplevel(parent) if parent else ctk.CTkToplevel()
     win.title("Settings")
-    win.geometry("360x260")
+    win.geometry("320x160")
     win.resizable(False, False)
 
     # Keep popup above parent but without grab_set()
@@ -185,22 +176,17 @@ def open_settings_popup(parent=None):
     # ======================================================
     # UI
     # ======================================================
-    title = ctk.CTkLabel(win, text="Settings", font=ctk.CTkFont(size=20, weight="bold"))
-    title.pack(pady=(12, 8))
+    title = ctk.CTkLabel(win, text="Settings", font=ctk.CTkFont(size=18, weight="bold"))
+    title.pack(pady=(12, 6))
 
     # Frame
     frm = ctk.CTkFrame(win)
-    frm.pack(padx=20, pady=10, fill="both", expand=True)
+    frm.pack(padx=16, pady=8, fill="both", expand=True)
 
     # Team size
-    ctk.CTkLabel(frm, text="Team Size:").grid(row=0, column=0, sticky="w", pady=5)
+    ctk.CTkLabel(frm, text="Team Size:").grid(row=0, column=0, sticky="w", pady=6)
     team_size_entry = ctk.CTkEntry(frm, width=80)
-    team_size_entry.grid(row=0, column=1, sticky="w", pady=5)
-
-    # Seasons Enabled
-    seasons_var = ctk.BooleanVar()
-    seasons_check = ctk.CTkCheckBox(frm, text="Enable Seasons", variable=seasons_var)
-    seasons_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
+    team_size_entry.grid(row=0, column=1, sticky="w", pady=6)
 
     # Load saved settings
     try:
@@ -209,7 +195,6 @@ def open_settings_popup(parent=None):
         cur_settings = {}
     if cur_settings:
         team_size_entry.insert(0, str(cur_settings.get("team_size", "")))
-        seasons_var.set(cur_settings.get("seasons_enabled", False))
 
     # ======================================================
     # Save handler
@@ -227,10 +212,9 @@ def open_settings_popup(parent=None):
             messagebox.showerror("Invalid Input", "Team size must be a positive integer.")
             return
         ts_val = int(txt)
-        seasons_val = bool(seasons_var.get())
 
         # Persist settings using this module's save_settings
-        ok = save_settings({"team_size": ts_val, "seasons_enabled": seasons_val})
+        ok = save_settings({"team_size": ts_val})
         if not ok:
             messagebox.showerror("Settings", "Failed to save settings.")
             return
@@ -253,7 +237,7 @@ def open_settings_popup(parent=None):
 
     # Footer buttons
     btn_frame = ctk.CTkFrame(win, fg_color="transparent")
-    btn_frame.pack(pady=10)
+    btn_frame.pack(pady=8)
 
     ctk.CTkButton(btn_frame, text="Save", width=80, command=_on_save_clicked).grid(row=0, column=0, padx=10)
     ctk.CTkButton(btn_frame, text="Cancel", width=80, command=lambda: win.destroy()).grid(row=0, column=1, padx=10)

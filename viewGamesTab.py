@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
-from datetime import datetime
+from datetime import datetime, date as _date
 from theDB import *
 
 # This module displays and edits scheduled games.
@@ -10,6 +10,63 @@ from theDB import *
 refs = {}
 scheduled_games = []
 show_game_details = lambda i: None  # will be set by mainGui to file3.show_game_details
+
+def _season_range_for_year(season, year):
+    """
+    Return (start_date, end_date) for the given season and season-start year.
+    Handles seasons that span calendar years (Regular Season).
+    """
+    mapping = {
+        "Pre-season": ((9, 25), (10, 16)),
+        "Regular Season": ((10, 17), (4, 16)),  # crosses year boundary
+        "Play-in": ((4, 17), (4, 24)),
+        "Playoff": ((4, 25), (6, 8)),
+        "Finals": ((6, 9), (6, 24)),
+        "Off-season": ((6, 25), (9, 24)),
+    }
+    if season not in mapping:
+        return None, None
+    (sm, sd), (em, ed) = mapping[season]
+    start = _date(year, sm, sd)
+    if (em, ed) < (sm, sd):
+        end = _date(year + 1, em, ed)
+    else:
+        end = _date(year, em, ed)
+    return start, end
+
+def _season_for_date(dt):
+    """
+    Determine season name for a given date object.
+    Tries interpreting season windows anchored at dt.year and dt.year-1,
+    so dates like March 2025 are matched to the 2024-2025 Regular Season if appropriate.
+    Returns season string or empty string if unknown.
+    """
+    seasons = [
+        "Pre-season",
+        "Regular Season",
+        "Play-in",
+        "Playoff",
+        "Finals",
+        "Off-season"
+    ]
+    for season in seasons:
+        # Try anchor at dt.year and dt.year-1
+        for anchor in (dt.year, dt.year - 1):
+            start, end = _season_range_for_year(season, anchor)
+            if start is None:
+                continue
+            if start <= dt <= end:
+                return season
+    return ""
+
+def _season_from_iso(date_iso):
+    """Safe wrapper to parse ISO date string (YYYY-MM-DD) and return season name."""
+    try:
+        dt = datetime.strptime(date_iso, "%Y-%m-%d").date()
+    except Exception:
+        return ""
+    return _season_for_date(dt)
+
 
 def on_view_click(index, game):
     """Called when the View button is pressed."""
@@ -51,21 +108,22 @@ def on_view_click(index, game):
     }
 
 def refresh_scheduled_games_table(table_frame):
-    """Refresh the table of scheduled games"""
+    """Refresh the table of scheduled games (now includes Season column)."""
     # Clear existing rows
     for widget in table_frame.winfo_children():
         widget.destroy()
 
-    # Header row (added Status column)
+    # Header row (added Season column)
     header_frame = ctk.CTkFrame(table_frame, fg_color="#1F1F1F")
     header_frame.pack(fill="x", padx=8, pady=4)
     ctk.CTkLabel(header_frame, text="Team 1", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0, padx=8, pady=4, sticky="w")
     ctk.CTkLabel(header_frame, text="Team 2", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=1, padx=8, pady=4, sticky="w")
     ctk.CTkLabel(header_frame, text="Venue", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=2, padx=8, pady=4, sticky="w")
     ctk.CTkLabel(header_frame, text="Date", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=3, padx=8, pady=4, sticky="w")
-    ctk.CTkLabel(header_frame, text="Time", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=4, padx=8, pady=4, sticky="w")
-    ctk.CTkLabel(header_frame, text="Status", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=5, padx=8, pady=4, sticky="w")
-    ctk.CTkLabel(header_frame, text="View", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=6, padx=8, pady=4, sticky="w")
+    ctk.CTkLabel(header_frame, text="Season", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=4, padx=8, pady=4, sticky="w")
+    ctk.CTkLabel(header_frame, text="Time", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=5, padx=8, pady=4, sticky="w")
+    ctk.CTkLabel(header_frame, text="Status", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=6, padx=8, pady=4, sticky="w")
+    ctk.CTkLabel(header_frame, text="View", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=7, padx=8, pady=4, sticky="w")
 
     # Data rows
     for idx, game in enumerate(scheduled_games):
@@ -75,7 +133,12 @@ def refresh_scheduled_games_table(table_frame):
         ctk.CTkLabel(row_frame, text=game['team2']).grid(row=0, column=1, padx=8, pady=4, sticky="w")
         ctk.CTkLabel(row_frame, text=game['venue']).grid(row=0, column=2, padx=8, pady=4, sticky="w")
         ctk.CTkLabel(row_frame, text=game['date']).grid(row=0, column=3, padx=8, pady=4, sticky="w")
-        ctk.CTkLabel(row_frame, text=f"{game.get('start', '00:00')} - {game.get('end', '00:00')}").grid(row=0, column=4, padx=8, pady=4, sticky="w")
+
+        # Season column (derived from game date)
+        season_name = _season_from_iso(game.get('date') or "")
+        ctk.CTkLabel(row_frame, text=season_name).grid(row=0, column=4, padx=8, pady=4, sticky="w")
+
+        ctk.CTkLabel(row_frame, text=f"{game.get('start', '00:00')} - {game.get('end', '00:00')}").grid(row=0, column=5, padx=8, pady=4, sticky="w")
 
         # Status label: query DB for is_final for this game id
         try:
@@ -96,24 +159,24 @@ def refresh_scheduled_games_table(table_frame):
             status_lbl = ctk.CTkLabel(row_frame, text="Ended", text_color="#D9534F")  # red-ish
         else:
             status_lbl = ctk.CTkLabel(row_frame, text="Active", text_color="#7CFC00")  # green-ish
-        status_lbl.grid(row=0, column=5, padx=8, pady=4, sticky="w")
+        status_lbl.grid(row=0, column=6, padx=8, pady=4, sticky="w")
 
         # View button (new)
         view_btn = ctk.CTkButton(row_frame, text="View", width=60, height=30,
                                 command=lambda i=idx, g=game: on_view_click(i, g),
                                 hover_color="#4A90E2", fg_color="#1F75FE")
-        view_btn.grid(row=0, column=6, padx=4, pady=4, sticky="w")
+        view_btn.grid(row=0, column=7, padx=4, pady=4, sticky="w")
 
         # Action buttons
         edit_btn = ctk.CTkButton(row_frame, text="Edit", width=60, height=30,
                                  command=lambda i=idx: edit_scheduled_game(i),
                                  hover_color="#FFA500", fg_color="#4CAF50")
-        edit_btn.grid(row=0, column=7, padx=4, pady=4)
+        edit_btn.grid(row=0, column=8, padx=4, pady=4)
 
         delete_btn = ctk.CTkButton(row_frame, text="Delete", width=60, height=30,
                                    command=lambda i=idx: delete_scheduled_game(i),
                                    hover_color="#FF4500", fg_color="#F44336")
-        delete_btn.grid(row=0, column=8, padx=4, pady=4)
+        delete_btn.grid(row=0, column=9, padx=4, pady=4)
 
 def edit_scheduled_game(index):
     if index < 0 or index >= len(scheduled_games):

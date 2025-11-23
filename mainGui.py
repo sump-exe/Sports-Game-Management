@@ -18,9 +18,6 @@ app.geometry("1200x700")  # Increased size for better layout
 # Database-backed schedule manager
 sched_mgr = ScheduleManager()
 
-# Import settings module (DB-backed settings)
-import settings
-
 # Import UI modules AFTER creating app, sched_mgr and refs to avoid circular imports.
 # Each module is written so mainGui will set module-level attributes to wire them together.
 import teamsTab as file1
@@ -111,15 +108,6 @@ def show_main_interface():
     # header bar (logout + toggle)
     header = ctk.CTkFrame(app)
     header.pack(fill="x", padx=8, pady=8)
-
-    # Settings button on the left side of the title
-    def open_settings():
-        try:
-            settings.open_settings_popup(app)
-        except Exception as e:
-            messagebox.showwarning("Settings", f"Could not open settings: {e}")
-
-    ctk.CTkButton(header, text="Settings", command=open_settings, width=100).pack(side="left", padx=(10,6))
 
     ctk.CTkLabel(header, text="Game Scheduler System", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=(10,12))
 
@@ -246,48 +234,13 @@ def show_main_interface():
     schedule_frame = ctk.CTkFrame(tab3)
     schedule_frame.grid(row=1, column=0, sticky="nwe", padx=12, pady=8)
 
-    # Team 1
-    ctk.CTkLabel(schedule_frame, text="Team 1:").grid(row=0, column=0, padx=8, pady=(8,4), sticky="w")
-    tab3_team1_opt = ctk.CTkOptionMenu(schedule_frame, values=list(file1.teams.keys()),
-                                    command=lambda _: file3.update_game_preview())
-    tab3_team1_opt.grid(row=1, column=0, padx=8, pady=4, sticky="we")
-    tab3_team1_opt.set("Select")
-
-    # Team 2
-    ctk.CTkLabel(schedule_frame, text="Team 2:").grid(row=0, column=1, padx=8, pady=(8,4), sticky="w")
-    tab3_team2_opt = ctk.CTkOptionMenu(schedule_frame, values=list(file1.teams.keys()),
-                                    command=lambda _: file3.update_game_preview())
-    tab3_team2_opt.grid(row=1, column=1, padx=8, pady=4, sticky="we")
-    tab3_team2_opt.set("Select")
-
-    # Venue
-    ctk.CTkLabel(schedule_frame, text="Venue:").grid(row=2, column=0, padx=8, pady=(8,4), sticky="w")
-    tab3_venue_opt = ctk.CTkOptionMenu(schedule_frame, values=list(file2.venues.keys()),
-                                    command=lambda _: file3.update_game_preview())
-    tab3_venue_opt.grid(row=3, column=0, padx=8, pady=4, sticky="we")
-    tab3_venue_opt.set("Select")
-
-    # Date
-    ctk.CTkLabel(schedule_frame, text="Date (YYYY-MM-DD):").grid(row=2, column=1, padx=8, pady=(8,4), sticky="w")
-    tab3_date_entry = ctk.CTkEntry(schedule_frame)
-    tab3_date_entry.grid(row=3, column=1, padx=8, pady=4, sticky="we")
-    tab3_date_entry.bind("<KeyRelease>", lambda e: file3.update_game_preview())
-
-    # Start / End
-    ctk.CTkLabel(schedule_frame, text="Start Time (HH:MM, 24-hour):").grid(row=4, column=0, padx=8, pady=(8,4), sticky="w")
-    tab3_start_entry = ctk.CTkEntry(schedule_frame)
-    tab3_start_entry.grid(row=5, column=0, padx=8, pady=4, sticky="we")
-    tab3_start_entry.bind("<KeyRelease>", lambda e: file3.update_game_preview())
-
-    ctk.CTkLabel(schedule_frame, text="End Time (HH:MM, 24-hour):").grid(row=4, column=1, padx=8, pady=(8,4), sticky="w")
-    tab3_end_entry = ctk.CTkEntry(schedule_frame)
-    tab3_end_entry.grid(row=5, column=1, padx=8, pady=4, sticky="we")
-    tab3_end_entry.bind("<KeyRelease>", lambda e: file3.update_game_preview())
-
-    # Save button
-    ctk.CTkButton(schedule_frame, text="Schedule Game", command=file3.schedule_game).grid(
-        row=6, column=0, columnspan=2, pady=12
-    )
+    # Build the scheduling UI using scheduleGameTab helper (delegated)
+    try:
+        # build_schedule_left_ui will populate shared refs (tab3_team1_opt, tab3_team2_opt, etc.)
+        file3.build_schedule_left_ui(schedule_frame)
+    except Exception as e:
+        # defensive fallback: show an error so user knows why scheduling UI didn't appear
+        ctk.CTkLabel(schedule_frame, text=f"Failed to load scheduling UI: {e}").pack(padx=8, pady=8)
 
     # PREVIEW PANEL (Right Side)
     preview_frame = ctk.CTkFrame(tab3)
@@ -301,21 +254,8 @@ def show_main_interface():
     preview_label.pack(padx=12, pady=12, anchor="nw")
 
     # Store refs
-    refs["tab3_team1_opt"] = tab3_team1_opt
-    refs["tab3_team2_opt"] = tab3_team2_opt
-    refs["tab3_venue_opt"] = tab3_venue_opt
-    refs["tab3_date_entry"] = tab3_date_entry
-    refs["tab3_start_entry"] = tab3_start_entry
-    refs["tab3_end_entry"] = tab3_end_entry
     refs["game_preview_label"] = preview_label
     refs["game_preview"] = preview_label
-
-    # Register a callback with settings so saving settings updates schedule dropdowns
-    try:
-        settings.register_on_change(lambda: file3.update_schedule_optionmenus(tab3_team1_opt, tab3_team2_opt, tab3_venue_opt))
-    except Exception:
-        # best-effort: if registration fails, continue
-        pass
 
     # Tab 4: View Games
     tab4 = tabview.tab("View Games")
@@ -337,8 +277,6 @@ def show_main_interface():
     # Right-side game details panel
     game_details_frame = ctk.CTkFrame(tab4)
     game_details_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
-
-    refs["game_details_frame"] = game_details_frame
 
     ctk.CTkLabel(game_details_frame, text="Game Details",
                 font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
@@ -414,8 +352,15 @@ def show_main_interface():
     file5.refs = refs
     refresh_standings_table(standings_scroll)
 
-    # ensure scheduling options reflect current data
-    update_schedule_optionmenus(tab3_team1_opt, tab3_team2_opt, tab3_venue_opt)
+    # ensure scheduling options reflect current data (use refs populated by schedule builder)
+    try:
+        update_schedule_optionmenus(
+            refs.get('tab3_team1_opt'),
+            refs.get('tab3_team2_opt'),
+            refs.get('tab3_venue_opt')
+        )
+    except Exception:
+        pass
 
     # refresh sidebars again to ensure UI is consistent
     refresh_team_sidebar(teams_sidebar_scroll, team_players_area, teams_buttons)
