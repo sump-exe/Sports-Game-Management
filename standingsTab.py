@@ -130,7 +130,7 @@ def refresh_standings_table(container):
         pass
     _widgets["content"] = content
 
-    standings_frame = ctk.CTkScrollableFrame(content, width=700, fg_color="#0F0F0F")
+    standings_frame = ctk.CTkScrollableFrame(content, width=700, height=450, fg_color="#0F0F0F")
     standings_frame.grid(row=0, column=0, sticky="nsew", padx=(0,8), pady=4)
     _widgets["standings_frame"] = standings_frame
 
