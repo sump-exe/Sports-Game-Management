@@ -13,3 +13,4 @@ comfort features<br>
 change edit games pop-up in viewGamesTab.py
 </ul>
 
+> Tester: JC
