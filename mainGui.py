@@ -76,12 +76,12 @@ def show_login_screen():
 
     header = ctk.CTkFrame(app)
     header.pack(fill="x", padx=12, pady=12)
-    ctk.CTkLabel(header, text="Game Scheduler System", font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=(6,12))
+    ctk.CTkLabel(header, text="Basketball Game Scheduler System", font=ctk.CTkFont(size=20, weight="bold")).pack(side="left", padx=(6,12))
 
     content = ctk.CTkFrame(app)
     content.pack(expand=True, fill="both", padx=16, pady=20)
 
-    ctk.CTkLabel(content, text="Welcome to the Game Scheduler", font=ctk.CTkFont(size=18)).pack(pady=(30,5))
+    ctk.CTkLabel(content, text="Welcome", font=ctk.CTkFont(size=18)).pack(pady=(30,5))
 
     login_frame = ctk.CTkFrame(content)
     login_frame.pack(pady=(5,0))
@@ -109,7 +109,7 @@ def show_main_interface():
     header = ctk.CTkFrame(app)
     header.pack(fill="x", padx=8, pady=8)
 
-    ctk.CTkLabel(header, text="Game Scheduler System", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=(10,12))
+    ctk.CTkLabel(header, text="Basketball Game Scheduler System", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=(10,12))
 
     def do_logout():
         if messagebox.askokcancel("Logout", "You are about to log out. Continue?"):
