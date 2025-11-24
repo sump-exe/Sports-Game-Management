@@ -12,7 +12,7 @@ refs = {}
 
 # Root app
 app = ctk.CTk()
-app.title("Game Scheduler System")
+app.title("Basketball Game Scheduler System")
 app.geometry("1200x700")  # Increased size for better layout
 
 # Database-backed schedule manager
