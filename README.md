@@ -3,8 +3,6 @@ About:
 
 To do:
 <ul>
-limit jersey numbers to 1-2 digit ints<br>
-limit name length to 30-50 chars<br>
 remove redundant code added from scrapped files/blocks of code<br>
 comfort features<br>
 </ul>
