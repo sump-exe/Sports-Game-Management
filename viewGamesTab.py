@@ -97,10 +97,21 @@ def on_view_click(index, game):
     # Replace old label reference
     refs["details_content"] = details_label
 
-    # Now show details inside the NEW label
-    show_game_details(index)
+    try:
+        app_widget = refs.get('app')
+        if hasattr(app_widget, 'after'):
+            app_widget.after(0, lambda i=index: show_game_details(i))
+        else:
+            # fallback if app not available
+            show_game_details(index)
+    except Exception:
+        # If something goes wrong with after, call directly as fallback
+        try:
+            show_game_details(index)
+        except Exception:
+            pass
 
-    # Mark selected game again
+    # Mark selected game again (redundant but preserves original behavior)
     refs["selected_game"] = {
         "id": game["id"],
         "team1_id": game["team1_id"],
@@ -126,7 +137,7 @@ def refresh_scheduled_games_table(table_frame):
     ctk.CTkLabel(header_frame, text="View", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=7, padx=8, pady=4, sticky="w")
 
     # Data rows
-    for idx, game in enumerate(scheduled_games):
+    for index, game in enumerate(scheduled_games):
         row_frame = ctk.CTkFrame(table_frame, fg_color="#2A2A2A")
         row_frame.pack(fill="x", padx=8, pady=2)
         ctk.CTkLabel(row_frame, text=game['team1']).grid(row=0, column=0, padx=8, pady=4, sticky="w")
@@ -163,18 +174,18 @@ def refresh_scheduled_games_table(table_frame):
 
         # View button (new)
         view_btn = ctk.CTkButton(row_frame, text="View", width=60, height=30,
-                                command=lambda i=idx, g=game: on_view_click(i, g),
+                                command=lambda i=index, g=game: on_view_click(i, g),
                                 hover_color="#4A90E2", fg_color="#1F75FE")
         view_btn.grid(row=0, column=7, padx=4, pady=4, sticky="w")
 
         # Action buttons
         edit_btn = ctk.CTkButton(row_frame, text="Edit", width=60, height=30,
-                                 command=lambda i=idx: edit_scheduled_game(i),
+                                 command=lambda i=index: edit_scheduled_game(i),
                                  hover_color="#FFA500", fg_color="#4CAF50")
         edit_btn.grid(row=0, column=8, padx=4, pady=4)
 
         delete_btn = ctk.CTkButton(row_frame, text="Delete", width=60, height=30,
-                                   command=lambda i=idx: delete_scheduled_game(i),
+                                   command=lambda i=index: delete_scheduled_game(i),
                                    hover_color="#FF4500", fg_color="#F44336")
         delete_btn.grid(row=0, column=9, padx=4, pady=4)
 
@@ -182,52 +193,25 @@ def edit_scheduled_game(index):
     if index < 0 or index >= len(scheduled_games):
         return
     game = scheduled_games[index]
-
-    # --- NEW: Query all teams and venues for dropdowns
-    try:
-        from teamsTab import teams as _teams
-        from venuesTab import venues as _venues
-    except Exception:
-        _teams, _venues = {}, {}
-    team_names = sorted(list(_teams.keys()))
-    venue_names = sorted(list(_venues.keys()))
-    # Fallback if not imported
-    if not team_names:
-        try:
-            cur = mydb.cursor()
-            cur.execute("SELECT teamName FROM teams ORDER BY teamName")
-            team_names = [row[0] for row in cur.fetchall()]
-            cur.close()
-        except Exception:
-            team_names = []
-    if not venue_names:
-        try:
-            cur = mydb.cursor()
-            cur.execute("SELECT venueName FROM venues ORDER BY venueName")
-            venue_names = [row[0] for row in cur.fetchall()]
-            cur.close()
-        except Exception:
-            venue_names = []
-
     win = ctk.CTkToplevel(refs.get('app') if refs.get('app') else None)
     win.title("Edit Scheduled Game")
     win.geometry("420x350")
     win.transient(refs.get('app') if refs.get('app') else None)
 
     ctk.CTkLabel(win, text="Team 1:").pack(pady=(12,4), anchor="w", padx=12)
-    team1_opt = ctk.CTkOptionMenu(win, values=team_names)
-    team1_opt.pack(fill="x", padx=12)
-    team1_opt.set(game['team1'])
+    team1_entry = ctk.CTkEntry(win)
+    team1_entry.insert(0, game['team1'])
+    team1_entry.pack(fill="x", padx=12)
 
     ctk.CTkLabel(win, text="Team 2:").pack(pady=(8,4), anchor="w", padx=12)
-    team2_opt = ctk.CTkOptionMenu(win, values=team_names)
-    team2_opt.pack(fill="x", padx=12)
-    team2_opt.set(game['team2'])
+    team2_entry = ctk.CTkEntry(win)
+    team2_entry.insert(0, game['team2'])
+    team2_entry.pack(fill="x", padx=12)
 
     ctk.CTkLabel(win, text="Venue:").pack(pady=(8,4), anchor="w", padx=12)
-    venue_opt = ctk.CTkOptionMenu(win, values=venue_names)
-    venue_opt.pack(fill="x", padx=12)
-    venue_opt.set(game['venue'])
+    venue_entry = ctk.CTkEntry(win)
+    venue_entry.insert(0, game['venue'])
+    venue_entry.pack(fill="x", padx=12)
 
     ctk.CTkLabel(win, text="Date (YYYY-MM-DD):").pack(pady=(8,4), anchor="w", padx=12)
     date_entry = ctk.CTkEntry(win)
@@ -235,12 +219,18 @@ def edit_scheduled_game(index):
     date_entry.pack(fill="x", padx=12)
 
     def save_edit():
-        t1 = team1_opt.get().strip()
-        t2 = team2_opt.get().strip()
-        v = venue_opt.get().strip()
+        t1 = team1_entry.get().strip()
+        t2 = team2_entry.get().strip()
+        v = venue_entry.get().strip()
         d = date_entry.get().strip()
         # validate inputs
-        if not all([t1, t2, v, d]) or t1 == t2 or t1 not in team_names or t2 not in team_names or v not in venue_names:
+        try:
+            from teamsTab import teams as _teams
+            from venuesTab import venues as _venues
+        except Exception:
+            _teams = {}
+            _venues = {}
+        if not all([t1, t2, v, d]) or t1 == t2 or t1 not in _teams or t2 not in _teams or v not in _venues:
             messagebox.showwarning("Invalid", "Please fill all fields correctly and ensure teams/venue exist.")
             return
         # validate date format
@@ -250,10 +240,13 @@ def edit_scheduled_game(index):
             messagebox.showwarning("Invalid", "Date must be in YYYY-MM-DD format.")
             return
         # Persist edit to DB if possible
+        game = scheduled_games[index]
         game_id = game.get('id')
+        # preserve existing times if present
         start = game.get('start', '00:00')
         end = game.get('end', '00:00')
 
+        # Lookup IDs
         from theDB import ScheduleManager
         cur = ScheduleManager().mydb.cursor()
         try:
@@ -270,10 +263,14 @@ def edit_scheduled_game(index):
             away_id = away['id']
             venue_id = venue_row['id']
 
+            # Use the global ScheduleManager via theDB module's connection
+            from theDB import mydb
+            # Use ScheduleManager from theDB that uses the same mydb
             sm = ScheduleManager()
             if game_id:
                 sm.updateGame(game_id, home_id, away_id, venue_id, d, start, end)
             else:
+                # If no id, insert new record and then update times
                 new_id = sm.scheduleGame(home_id, away_id, venue_id, d)
                 sm.updateGame(new_id, home_id, away_id, venue_id, d, start, end)
         finally:
@@ -282,6 +279,7 @@ def edit_scheduled_game(index):
             except Exception:
                 pass
 
+        # reload from DB and refresh UI
         try:
             from scheduleGameTab import load_scheduled_games_from_db as _load
             _load()
@@ -292,7 +290,8 @@ def edit_scheduled_game(index):
         win.destroy()
 
     ctk.CTkButton(win, text="Save Changes", command=save_edit).pack(pady=12)
-    
+
+
 def delete_scheduled_game(index):
     if not (0 <= index < len(scheduled_games)):
         return
