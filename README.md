@@ -3,8 +3,9 @@ About:
 
 To do:
 <ul>
-remove redundant code added from scrapped files/blocks of code<br>
-comfort features<br>
+  add game history for each team<br>
+  remove redundant code added from scrapped files/blocks of code<br>
+  comfort features<br>
 </ul>
 
 > Tester: JC
