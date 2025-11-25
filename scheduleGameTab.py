@@ -501,12 +501,16 @@ def schedule_game():
 
     if req is not None:
         if len1 != req or len2 != req:
-            messagebox.showwarning("Invalid Teams", f"Both teams must have exactly {req} players to schedule a game.\nSelected teams have: {t1}={len1}, {t2}={len2}.")
+            messagebox.showwarning(
+                "Invalid Teams", 
+                f"Both teams must have exactly {req} players to schedule a game.\nSelected teams have: {t1}={len1}, {t2}={len2}."
+            )
             return
 
-    # Persist to DB: find ids for team names and venue
+    # --- ADDED: Active Game Restriction ---
     cur = sched_mgr.mydb.cursor()
     try:
+        # Get IDs of teams and venue
         cur.execute("SELECT id FROM teams WHERE teamName = ?", (t1,))
         home = cur.fetchone()
         cur.execute("SELECT id FROM teams WHERE teamName = ?", (t2,))
@@ -520,7 +524,42 @@ def schedule_game():
         away_id = away['id']
         venue_id = venue_row['id']
 
-        # Insert game and then update times using the combined date
+        # Check for any non-finalized, not-yet-ended games for either team
+        today = datetime.now().date()
+        now_time = datetime.now().time()
+        cur.execute("""
+            SELECT game_date, start_time, end_time, is_final
+            FROM games
+            WHERE 
+                is_final = 0
+                AND (team1_id = ? OR team2_id = ? OR team1_id = ? OR team2_id = ?)
+        """, (home_id, home_id, away_id, away_id))
+        for row in cur.fetchall():
+            game_dt = None
+            try:
+                game_dt = datetime.strptime(row["game_date"], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            st = row["start_time"] or "00:00"
+            et = row["end_time"] or "00:00"
+            try:
+                st_obj = datetime.strptime(st, "%H:%M").time()
+                et_obj = datetime.strptime(et, "%H:%M").time()
+            except Exception:
+                st_obj = et_obj = None
+            # Only check games on today or future
+            if (game_dt > today) or (game_dt == today and (et_obj is None or et_obj >= now_time)):
+                messagebox.showwarning("Active Game Exists", "One of the selected teams already has an active (not finalized) game scheduled that hasn't ended yet.\nFinish or delete the current game before scheduling a new one for this team.")
+                return
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+    # Persist to DB: find ids for team names and venue (they have already been checked)
+    cur = sched_mgr.mydb.cursor()
+    try:
         game_id = sched_mgr.scheduleGame(home_id, away_id, venue_id, parsed_date.isoformat())
         sched_mgr.updateGame(game_id, home_id, away_id, venue_id, parsed_date.isoformat(), start_time.strftime("%H:%M"), end_time.strftime("%H:%M"))
     finally:
