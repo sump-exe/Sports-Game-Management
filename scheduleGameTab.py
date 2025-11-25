@@ -75,9 +75,9 @@ def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
         team1_opt.configure(values=team_names)
     if hasattr(team2_opt, "configure"):
         team2_opt.configure(values=team_names)
-    available_venues = [v for v, d in venues.items() if d.get("available", True)]
+    venue_list = list(venues.keys())
     if hasattr(venue_opt, "configure"):
-        venue_opt.configure(values=available_venues)
+        venue_opt.configure(values=venue_list)
 
     try:
         if team1_opt.get() not in team_names:
@@ -96,7 +96,7 @@ def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
         except Exception:
             pass
     try:
-        if venue_opt.get() not in available_venues:
+        if venue_opt.get() not in venue_list:
             venue_opt.set("Select")
     except Exception:
         try:
