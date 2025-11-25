@@ -7,7 +7,6 @@ To do:
   remove redundant code added from scrapped files/blocks of code<br>
   comfort features<br>
   make sure that games that are currently happening will indicate 'ongoing' in viewGamesTab.py<br>
-  remove availability toggle in venuesTab.py<br>
   fix GUI for viewGamesTab.py
 </ul>
 
