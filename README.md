@@ -9,7 +9,7 @@ To do:
   make sure that games that are currently happening will indicate 'ongoing' in viewGamesTab.py<br>
   prevent scheduling games for a past date<br>
   remove availability toggle in venuesTab.py<br>
-  fix GUI for teamsTab.py and viewGamesTab.py
+  fix GUI for viewGamesTab.py
 </ul>
 
 > Tester: JC
