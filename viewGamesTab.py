@@ -7,6 +7,8 @@ refs = {}
 # keep a local fallback scheduled_games list, but prefer scheduleGameTab.scheduled_games when available
 scheduled_games = []
 
+rn = datetime.now()
+
 from scheduleGameTab import show_game_details
 
 try:
@@ -281,8 +283,11 @@ def refresh_scheduled_games_table(table_frame):
             except Exception:
                 is_final = False
 
+            rn = datetime.now()
             if is_final:
                 status_lbl = ctk.CTkLabel(row_frame, text="Ended", text_color="#D9534F")
+            elif start_dt <= rn <= end_dt:
+                status_lbl = ctk.CTkLabel(row_frame, text="Ongoing", text_color="#FFD700")
             else:
                 status_lbl = ctk.CTkLabel(row_frame, text="Active", text_color="#7CFC00")
             status_lbl.grid(row=0, column=6, padx=8, pady=4, sticky="w")
