@@ -5,7 +5,6 @@ To do:
 <ul>
   remove redundant code added from scrapped files/blocks of code<br>
   comfort features<br>
-  make sure that games that are currently happening will indicate 'ongoing' in viewGamesTab.py<br>
   fix GUI for viewGamesTab.py
 </ul>
 
