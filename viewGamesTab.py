@@ -281,7 +281,7 @@ def refresh_scheduled_games_table(table_frame):
             except Exception:
                 is_final = False
 
-            if is_final:
+            if is_final or game.get('end') <= datetime.now().strftime("%H:%M") and _parse_iso(game.get('date')) <= datetime.now().date():
                 status_lbl = ctk.CTkLabel(row_frame, text="Ended", text_color="#D9534F")
             else:
                 status_lbl = ctk.CTkLabel(row_frame, text="Active", text_color="#7CFC00")
