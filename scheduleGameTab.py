@@ -110,11 +110,10 @@ def show_game_details(index):
     game = scheduled_games[index]
     details = (
         f"Team 1: {game['team1']}\n"
-        f"Team 2: {game['team2']}\n"
-        f"Venue:  {game['venue']}\n"
+        f"Team 2: {game['team2']}\n\n"
+        f"Venue:  {game['venue']}\n\n"
         f"Date:   {game['date']}\n"
         f"Time:   {game['start']} - {game['end']}\n"
-        "\n--- Extra Details Here Later ---"
     )
     if refs.get("details_content"):
         refs["details_content"].configure(text=details)
