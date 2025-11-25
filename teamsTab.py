@@ -114,9 +114,9 @@ def show_team_players(team_name, players_frame):
             jersey = p.get('jersey') if isinstance(p, dict) else None
             pid = p.get('id') if isinstance(p, dict) else None
 
-            ctk.CTkLabel(row, text=name, anchor="w").pack(side="left", padx=(6,0))
+            ctk.CTkLabel(row, text=(f"#{jersey} " if jersey is not None else ""), anchor="e").pack(side="left", padx=(0,6))
 
-            ctk.CTkLabel(row, text=(f"#{jersey}" if jersey is not None else ""), anchor="e").pack(side="right", padx=(0,6))
+            ctk.CTkLabel(row, text=name, anchor="w").pack(side="left", padx=(6,0))
 
             btns = ctk.CTkFrame(row, fg_color="#333333")
             btns.pack(side="right", padx=(6,6))
@@ -251,11 +251,11 @@ def show_team_players(team_name, players_frame):
     add_frame = ctk.CTkFrame(players_frame, fg_color="#333333")
     add_frame.pack(pady=12, padx=8, fill="x")
 
-    entry = ctk.CTkEntry(add_frame, placeholder_text="Player name")
-    entry.pack(side="left", expand=True, fill="x", padx=(8, 6), pady=8)
-
     jersey_entry = ctk.CTkEntry(add_frame, placeholder_text="Jersey #", width=80)
     jersey_entry.pack(side="left", padx=(6,8), pady=8)
+
+    entry = ctk.CTkEntry(add_frame, placeholder_text="Player name")
+    entry.pack(side="left", expand=True, fill="x", padx=(8, 6), pady=8)
 
     def add_player_cmd():
         name = entry.get().strip()
