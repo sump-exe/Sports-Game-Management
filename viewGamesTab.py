@@ -5,7 +5,7 @@ from theDB import *
 
 refs = {}
 scheduled_games = []
-show_game_details = lambda i: None  
+from scheduleGameTab import show_game_details
 
 try:
     from scheduleGameTab import _season_range_for_year
@@ -141,24 +141,15 @@ def on_view_click(index, game):
 
     refs["details_content"] = details_label
 
-    try:
-        app_widget = refs.get('app')
-        if hasattr(app_widget, 'after'):
-            app_widget.after(0, lambda i=index: show_game_details(i))
-        else:
-            show_game_details(index)
-    except Exception:
-        try:
-            show_game_details(index)
-        except Exception:
-            pass
+    show_game_details(index)
+
+    panel.update()
 
     refs["selected_game"] = {
         "id": game.get("id"),
         "team1_id": game.get("team1_id"),
         "team2_id": game.get("team2_id")
     }
-
 
 def refresh_scheduled_games_table(table_frame):
     for widget in table_frame.winfo_children():
