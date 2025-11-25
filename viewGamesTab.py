@@ -3,9 +3,10 @@ from tkinter import messagebox
 from datetime import datetime, date as _date
 from theDB import *
 
-refs = {}
+refs = None
 # keep a local fallback scheduled_games list, but prefer scheduleGameTab.scheduled_games when available
-scheduled_games = []
+from scheduleGameTab import scheduled_games as sg
+scheduled_games = sg
 
 from scheduleGameTab import show_game_details
 
@@ -146,20 +147,16 @@ def on_view_click(index, game):
             w.destroy()
         except Exception:
             pass
-
-    details_label = ctk.CTkLabel(
-        panel,
-        text="Loading...",
-        justify="left",
-        anchor="nw"
-    )
-    details_label.pack(fill="both", expand=True, padx=10, pady=10)
-
-    refs["details_content"] = details_label
-
-    show_game_details(index)
-
-    panel.update()
+        details_label = refs.get("details_content")
+        panel = refs.get("game_details_frame")
+        if details_label is None or not details_label.winfo_exists():
+            # If missing, create it and pack.
+            details_label = ctk.CTkLabel(panel, text="", justify="left", anchor="nw")
+            details_label.pack(fill="both", expand=True, padx=10, pady=10)
+            refs["details_content"] = details_label
+        # Now call show_game_details, which will update details_content's text
+        show_game_details(index)
+        panel.update()
 
 def refresh_scheduled_games_table(table_frame):
     """
@@ -184,6 +181,8 @@ def refresh_scheduled_games_table(table_frame):
                 src_games = _get_scheduled_games_source()
         except Exception:
             pass
+        src_games = _get_scheduled_games_source()
+
 
     id_to_index = {}
     for idx, g in enumerate(src_games):

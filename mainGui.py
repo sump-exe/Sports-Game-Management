@@ -304,6 +304,7 @@ def show_main_interface():
                 refs['point_system_game_id'] = game_id
 
             ctk.CTkButton(tab4, text="Open Point System", command=open_point_system).grid(row=0, column=1, padx=10, pady=10, sticky="e")
+            load_scheduled_games_from_db()
             refresh_scheduled_games_table(games_table_scroll)
         except Exception as e:
             print(f"[mainGui] Exception in View Games tab: {e}")
@@ -354,4 +355,14 @@ def show_main_interface():
         messagebox.showerror("Critical Error", f"Main UI failed: {e}")
 
 show_login_screen()
+
+print("final scheduled_games id in main:", id(file3.scheduled_games))
+print("final scheduled_games id in view tab:", id(file4.scheduled_games))
+print("final refs id in main:", id(refs))
+print("final refs id in view tab:", id(file4.refs))
+
+# force unification again (if needed)
+file4.refs = refs
+file4.scheduled_games = file3.scheduled_games
+
 app.mainloop()
