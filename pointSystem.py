@@ -83,7 +83,7 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
             load_point_system_into_frame(parent, sel.get("id"), sel.get("team1_id"), sel.get("team2_id"))
 
         ctk.CTkButton(parent, text="Open Point System", command=reopen_point_system).grid(
-            row=2, column=1, padx=10, pady=10, sticky="e"
+            row=0, column=1, padx=10, pady=10, sticky="e"
         )
 
         try:

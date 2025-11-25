@@ -279,7 +279,7 @@ def show_main_interface():
         refs['point_system_game_id'] = game_id
 
     ctk.CTkButton(tab4, text="Open Point System", command=open_point_system).grid(
-        row=2, column=0, padx=10, pady=10, sticky="e"
+        row=0, column=1, padx=10, pady=10, sticky="e"
     )
 
     refresh_scheduled_games_table(games_table_scroll)
