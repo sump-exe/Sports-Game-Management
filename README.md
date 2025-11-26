@@ -5,7 +5,6 @@ To do:
 <ul>
   remove redundant code added from scrapped files/blocks of code<br>
   comfort features<br>
-  fix GUI for viewGamesTab.py
 </ul>
 
 > Tester: JC
