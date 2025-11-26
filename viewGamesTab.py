@@ -33,6 +33,8 @@ def show_game_details(index):
     if index < 0 or index >= len(scheduled_games):
         return
     game = scheduled_games[index]
+    if refs and isinstance(refs, dict):
+        refs["selected_game"] = game
     details = (
         f"Team 1: {game['team1']}\n"
         f"Team 2: {game['team2']}\n\n"
