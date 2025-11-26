@@ -19,7 +19,7 @@ def load_teams_from_db():
     for r in rows:
         teams[r['teamName']] = []
         pc = sched_mgr.mydb.cursor()
-        pc.execute("SELECT id, name, jerseyNumber FROM players WHERE team_id = ? ORDER BY name", (r['id'],))
+        pc.execute("SELECT id, name, jerseyNumber FROM players WHERE team_id = ? ORDER BY CAST(jerseyNumber AS INTEGER) ASC", (r['id'],))
         players = []
         for p in pc.fetchall():
             pid = p['id'] if 'id' in p.keys() else p[0]
