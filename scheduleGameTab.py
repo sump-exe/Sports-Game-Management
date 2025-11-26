@@ -286,36 +286,40 @@ def update_game_preview():
         venue = refs.get('tab3_venue_opt').get()
         if venue and venue != "Select":
             lines.append(f"Venue:  {venue}")
-    if refs.get('tab3_team1_opt'):
-        team1 = refs.get('tab3_team1_opt').get()
-        if team1 and team1 != "Select":
-            lines.append(f"\nTeam 1: {team1}")
-            players = teams.get(team1, [])
-            for p in players:
+    team1 = refs.get('tab3_team1_opt').get() if refs.get('tab3_team1_opt') else None
+    team2 = refs.get('tab3_team2_opt').get() if refs.get('tab3_team2_opt') else None
+
+    if (team1 and team1 != "Select") or (team2 and team2 != "Select"):
+        # Title row
+        team1_str = f"Team 1: {team1}" if team1 and team1 != "Select" else ""
+        team2_str = f"Team 2: {team2}" if team2 and team2 != "Select" else ""
+        pad = "           vs           "
+        lines.append(f"{team1_str:<24}{pad}{team2_str}")
+
+        # Players rows
+        players1 = teams.get(team1, []) if team1 and team1 != "Select" else []
+        players2 = teams.get(team2, []) if team2 and team2 != "Select" else []
+        max_roster = max(len(players1), len(players2))
+        for i in range(max_roster):
+            left = ""
+            right = ""
+            if i < len(players1):
+                p = players1[i]
                 if isinstance(p, dict):
                     name = p.get('name', '')
                     jersey = p.get('jersey')
-                    if jersey is not None:
-                        lines.append(f"  #{jersey} - {name}")
-                    else:
-                        lines.append(f"  - {name}")
+                    left = f"  #{jersey} - {name}" if jersey is not None else f"  - {name}"
                 else:
-                    lines.append(f"  - {p}")
-    if refs.get('tab3_team2_opt'):
-        team2 = refs.get('tab3_team2_opt').get()
-        if team2 and team2 != "Select":
-            lines.append(f"\nTeam 2: {team2}")
-            players2 = teams.get(team2, [])
-            for p in players2:
+                    left = f"  - {p}"
+            if i < len(players2):
+                p = players2[i]
                 if isinstance(p, dict):
                     name = p.get('name', '')
                     jersey = p.get('jersey')
-                    if jersey is not None:
-                        lines.append(f"  #{jersey} - {name}")
-                    else:
-                        lines.append(f"  - {name}")
+                    right = f"  #{jersey} - {name}" if jersey is not None else f"  - {name}"
                 else:
-                    lines.append(f"  - {p}")
+                    right = f"  - {p}"
+            lines.append(f"{left:<24}{right}")
 
     text = "\n".join(lines) if lines else "Fill out fields to preview..."
     lbl = refs.get('game_preview_label') or refs.get('game_preview')
@@ -417,7 +421,7 @@ def schedule_game():
         messagebox.showwarning("Invalid", "Combined Year and Month-Day produce an invalid date.")
         return
 
-    # --- NEW: Enforce season-based valid date ranges ---
+    # enforce season-based valid date ranges
     try:
         season = refs.get('tab3_season_opt').get() if refs.get('tab3_season_opt') else None
     except Exception:
@@ -442,7 +446,7 @@ def schedule_game():
         messagebox.showwarning("Invalid", "End time must be after start time.")
         return
 
-    # Enforce exact 12-player teams for scheduling (UI already filters, but double-check here)
+    # enforce exact 12-player teams for scheduling (UI already filters, but double-check here)
     required_size = 12
 
     # lookup roster lengths (teams dict is wired in by mainGui)
@@ -464,7 +468,7 @@ def schedule_game():
             )
             return
 
-    # --- ADDED: Active Game Restriction ---
+    # prevent schedule if conflicting team or venue already booked for window
     cur = sched_mgr.mydb.cursor()
     try:
         # Get IDs of teams and venue
@@ -481,33 +485,31 @@ def schedule_game():
         away_id = away['id']
         venue_id = venue_row['id']
 
-        # Check for any non-finalized, not-yet-ended games for either team
-        today = datetime.now().date()
-        now_time = datetime.now().time()
+        # check for any scheduled game conflict by team or venue, same date, and overlapping window
         cur.execute("""
-            SELECT game_date, start_time, end_time, is_final
+            SELECT 
+                team1_id, team2_id, venue_id, start_time, end_time, game_date
             FROM games
             WHERE 
-                is_final = 0
-                AND (team1_id = ? OR team2_id = ? OR team1_id = ? OR team2_id = ?)
-        """, (home_id, home_id, away_id, away_id))
+                game_date = ?
+                AND (
+                    team1_id = ? OR team2_id = ? OR team1_id = ? OR team2_id = ? OR venue_id = ?
+                )
+        """, (parsed_date.isoformat(), home_id, home_id, away_id, away_id, venue_id))
         for row in cur.fetchall():
-            game_dt = None
-            try:
-                game_dt = datetime.strptime(row["game_date"], "%Y-%m-%d").date()
-            except Exception:
-                continue
             st = row["start_time"] or "00:00"
             et = row["end_time"] or "00:00"
             try:
                 st_obj = datetime.strptime(st, "%H:%M").time()
                 et_obj = datetime.strptime(et, "%H:%M").time()
+                if (start_time < et_obj) and (st_obj < end_time):
+                    messagebox.showwarning(
+                        "Schedule Conflict",
+                        "Cannot schedule: one of the selected teams or the selected venue is already booked for the same date and overlapping time window."
+                    )
+                    return
             except Exception:
-                st_obj = et_obj = None
-            # Only check games on today or future
-            if (game_dt > today) or (game_dt == today and (et_obj is None or et_obj >= now_time)):
-                messagebox.showwarning("Active Game Exists", "One of the selected teams already has an active (not finalized) game scheduled that hasn't ended yet.\nFinish or delete the current game before scheduling a new one for this team.")
-                return
+                continue
     finally:
         try:
             cur.close()
