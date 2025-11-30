@@ -63,18 +63,15 @@ def load_scheduled_games_from_db():
     except Exception:
         pass
 
-# --- NEW HELPER: Fetch wins for specific season/year ---
+# --- HELPER: Fetch wins for specific season/year (Generic) ---
 def _get_wins_map_for_season(season_name, year_str):
     """Returns a dictionary {team_name: win_count} for the specified season window."""
     wins_map = {name: 0 for name in teams.keys()}
-    
-    # Validate Year
     try:
         year_val = int(year_str)
     except ValueError:
         return wins_map
 
-    # Get Date Range for Season
     s_helper = Season()
     start_date, end_date = s_helper.get_range(season_name, year_val)
     
@@ -83,7 +80,6 @@ def _get_wins_map_for_season(season_name, year_str):
 
     cur = sched_mgr.mydb.cursor()
     try:
-        # Count wins in the games table within the date range
         cur.execute("""
             SELECT t.teamName, COUNT(g.id) as win_count
             FROM games g
@@ -92,7 +88,6 @@ def _get_wins_map_for_season(season_name, year_str):
               AND g.game_date BETWEEN ? AND ?
             GROUP BY t.teamName
         """, (start_date.isoformat(), end_date.isoformat()))
-        
         rows = cur.fetchall()
         for r in rows:
             wins_map[r['teamName']] = r['win_count']
@@ -100,43 +95,137 @@ def _get_wins_map_for_season(season_name, year_str):
         print(f"Error calculating wins: {e}")
     finally:
         cur.close()
-        
     return wins_map
+
+# --- NEW HELPER: Playoff Logic ---
+def _get_playoff_candidates(year_str):
+    """
+    Returns a list of exactly 2 team names representing the lowest ranking 
+    teams that have NOT been eliminated yet.
+    """
+    try:
+        year_val = int(year_str)
+    except ValueError:
+        return []
+
+    s_helper = Season()
+    
+    # 1. Identify Eliminated Teams (Anyone who lost a game in THIS Playoff season)
+    playoff_start, playoff_end = s_helper.get_range("Playoff", year_val)
+    eliminated_ids = set()
+    
+    cur = sched_mgr.mydb.cursor()
+    try:
+        # Find losers in finalized playoff games
+        if playoff_start and playoff_end:
+            cur.execute("""
+                SELECT CASE 
+                    WHEN winner_team_id = team1_id THEN team2_id
+                    WHEN winner_team_id = team2_id THEN team1_id
+                END as loser_id
+                FROM games
+                WHERE is_final = 1 
+                  AND winner_team_id IS NOT NULL
+                  AND game_date BETWEEN ? AND ?
+            """, (playoff_start.isoformat(), playoff_end.isoformat()))
+            rows = cur.fetchall()
+            for r in rows:
+                if r[0]: eliminated_ids.add(r[0])
+    except Exception as e:
+        print(f"Error checking elimination: {e}")
+        cur.close()
+        return []
+
+    # 2. Get Regular Season stats for Ranking Non-Eliminated Teams
+    reg_start, reg_end = s_helper.get_range("Regular Season", year_val)
+    candidates = []
+    
+    try:
+        # We need all teams that are NOT in eliminated_ids and have correct roster size
+        # We rank them by Regular Season Wins ASC (lowest first), then Points ASC
+        
+        # Build placeholder list of valid IDs from memory first (roster check)
+        valid_roster_ids = []
+        for t_name, t_roster in teams.items():
+            if len(t_roster) == 12: # Enforce roster size
+                # Get ID from DB
+                cur.execute("SELECT id FROM teams WHERE teamName = ?", (t_name,))
+                r = cur.fetchone()
+                if r and r['id'] not in eliminated_ids:
+                    valid_roster_ids.append(r['id'])
+
+        if not valid_roster_ids:
+            cur.close()
+            return []
+
+        # Query stats for these valid IDs
+        # We perform a LEFT JOIN on games to count wins/points in Regular Season
+        placeholders = ','.join(['?'] * len(valid_roster_ids))
+        query = f"""
+            SELECT 
+                t.teamName,
+                (SELECT COUNT(*) FROM games g WHERE g.winner_team_id = t.id 
+                 AND g.game_date BETWEEN ? AND ?) as reg_wins,
+                t.totalPoints -- Using aggregate total points as tiebreaker
+            FROM teams t
+            WHERE t.id IN ({placeholders})
+            ORDER BY reg_wins ASC, totalPoints ASC
+        """
+        
+        params = [reg_start.isoformat(), reg_end.isoformat()] + valid_roster_ids
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        
+        # 3. Select only the bottom 2 (Lowest Ranking)
+        # Since we sorted ASC, the first 2 rows are the lowest ranked
+        for r in rows:
+            candidates.append(r['teamName'])
+            
+        # If we have teams, return strictly the bottom 2 (or all if < 2)
+        return candidates[:2]
+
+    except Exception as e:
+        print(f"Error calculating playoff seeds: {e}")
+        return []
+    finally:
+        cur.close()
 
 # --- Logic to filter Team 2 based on Team 1 ---
 def on_team1_select(choice):
-    """Triggered when Team 1 is selected. Filters Team 2 based on matching wins."""
-    update_game_preview() # Update the text preview
+    """Triggered when Team 1 is selected."""
+    update_game_preview()
     
-    if choice == "Select" or not choice:
-        # If no team selected, reset Team 2 to full list
-        update_schedule_optionmenus(None, refs.get("tab3_team2_opt"), None)
-        return
-
-    # 1. Get Season/Year inputs
+    # Check if Season is Playoff
     season = refs.get('tab3_season_opt').get()
     year_txt = refs.get('tab3_year_entry').get()
-    
-    # 2. Calculate Wins
-    wins_map = _get_wins_map_for_season(season, year_txt)
-    target_wins = wins_map.get(choice, 0)
-    
-    # 3. Filter valid opponents (Must have same wins AND strict roster size)
-    required_size = 12
-    valid_opponents = []
-    
-    all_teams = list(teams.keys())
-    for t in all_teams:
-        if t == choice: continue
-        roster = teams.get(t, [])
-        if len(roster) != required_size: continue
+
+    if season == "Playoff":
+        # In Playoff mode, Team 1 list is already restricted to the bottom 2.
+        # Team 2 must simply be the *other* team in that pair.
+        candidates = _get_playoff_candidates(year_txt)
+        valid_opponents = [c for c in candidates if c != choice]
+    else:
+        # Standard Logic (Same Wins)
+        if choice == "Select" or not choice:
+            update_schedule_optionmenus(None, refs.get("tab3_team2_opt"), None)
+            return
+
+        wins_map = _get_wins_map_for_season(season, year_txt)
+        target_wins = wins_map.get(choice, 0)
         
-        if wins_map.get(t, 0) == target_wins:
-            valid_opponents.append(t)
+        required_size = 12
+        valid_opponents = []
+        all_teams = list(teams.keys())
+        for t in all_teams:
+            if t == choice: continue
+            roster = teams.get(t, [])
+            if len(roster) != required_size: continue
             
-    valid_opponents.sort()
+            if wins_map.get(t, 0) == target_wins:
+                valid_opponents.append(t)
+        valid_opponents.sort()
     
-    # 4. Update Team 2 Dropdown
+    # Update Team 2 Dropdown
     t2_opt = refs.get("tab3_team2_opt")
     if t2_opt:
         if not valid_opponents:
@@ -147,21 +236,32 @@ def on_team1_select(choice):
             t2_opt.set("Select")
 
 def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
-    # Enforce exactly 12 players for scheduling UI
-    required_size = 12
-
-    team_names_all = list(teams.keys())
-    filtered = []
-    for t in team_names_all:
-        roster = teams.get(t, [])
-        if len(roster) == int(required_size):
-            filtered.append(t)
+    # Determine Context (Season/Year)
+    season = refs.get('tab3_season_opt').get() if refs.get('tab3_season_opt') else "Regular Season"
+    year_txt = refs.get('tab3_year_entry').get() if refs.get('tab3_year_entry') else str(datetime.now().year)
     
-    team_names = filtered if filtered else []
+    if season == "Playoff":
+        # Playoff Logic: Only lowest ranking teams available
+        team_names = _get_playoff_candidates(year_txt)
+        # If < 2 teams, we can't schedule a game
+        if len(team_names) < 2:
+             team_names = ["Not enough teams"]
+    else:
+        # Standard Logic: All teams with 12 players
+        required_size = 12
+        team_names_all = list(teams.keys())
+        filtered = []
+        for t in team_names_all:
+            roster = teams.get(t, [])
+            if len(roster) == int(required_size):
+                filtered.append(t)
+        team_names = filtered if filtered else []
 
+    # Update Team 1 Dropdown
     if team1_opt and hasattr(team1_opt, "configure"):
         team1_opt.configure(values=team_names)
     
+    # Update Team 2 Dropdown (Reset to matching Team 1 list initially)
     if team2_opt and hasattr(team2_opt, "configure"):
         team2_opt.configure(values=team_names)
     
@@ -169,6 +269,7 @@ def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
     if venue_opt and hasattr(venue_opt, "configure"):
         venue_opt.configure(values=available_venues)
 
+    # Validation to ensure selected value is still valid
     try:
         if team1_opt and team1_opt.get() not in team_names: team1_opt.set("Select")
     except: pass
@@ -190,7 +291,8 @@ def build_schedule_left_ui(parent):
     # 1. Season (Row 0)
     ctk.CTkLabel(frame, text="Season:").grid(row=0, column=0, sticky="w", pady=3)
     season_values = ["Pre-season", "Regular Season", "Play-in", "Playoff", "Finals", "Off-season"]
-    season_opt = ctk.CTkOptionMenu(frame, values=season_values, command=lambda *_: [update_game_preview(), reset_team_selections()])
+    # Trigger reset and update logic when Season changes
+    season_opt = ctk.CTkOptionMenu(frame, values=season_values, command=lambda *_: [reset_team_selections(), update_game_preview()])
     season_opt.set("Regular Season")
     season_opt.grid(row=0, column=1, sticky="ew", pady=3)
     refs["tab3_season_opt"] = season_opt
@@ -199,7 +301,8 @@ def build_schedule_left_ui(parent):
     ctk.CTkLabel(frame, text="Year:").grid(row=1, column=0, sticky="w", pady=3)
     year_entry = ctk.CTkEntry(frame, placeholder_text=str(datetime.now().year))
     year_entry.grid(row=1, column=1, sticky="ew", pady=3)
-    year_entry.bind("<KeyRelease>", lambda e: [update_game_preview(), reset_team_selections()])
+    # Trigger reset and update logic when Year changes
+    year_entry.bind("<KeyRelease>", lambda e: [reset_team_selections(), update_game_preview()])
     refs["tab3_year_entry"] = year_entry
 
     # 3. Date (Month-Day) (Row 2)
@@ -246,14 +349,16 @@ def build_schedule_left_ui(parent):
     save_btn.grid(row=8, column=0, columnspan=2, pady=10, sticky="ew")
 
     frame.grid_columnconfigure(1, weight=1)
+    # Initial population
     update_schedule_optionmenus(team1_opt, team2_opt, venue_opt)
     return frame
 
 def reset_team_selections():
-    """Helper to reset dropdowns if Season/Year changes."""
+    """Helper to reset dropdowns if Season/Year changes, triggering the context-aware filter."""
     try:
+        # Pass the widgets explicitly to update them based on new season/year
+        update_schedule_optionmenus(refs.get("tab3_team1_opt"), refs.get("tab3_team2_opt"), None)
         refs["tab3_team1_opt"].set("Select")
-        update_schedule_optionmenus(None, refs["tab3_team2_opt"], None)
         refs["tab3_team2_opt"].set("Select")
     except:
         pass
@@ -317,7 +422,7 @@ def schedule_game():
     end = refs.get('tab3_end_entry').get().strip()
 
     # 2. Basic Validation
-    if not all([t1, t2, v, md, year_txt, start, end]) or "Select" in (t1, t2, v) or "No Match" in (t2):
+    if not all([t1, t2, v, md, year_txt, start, end]) or "Select" in (t1, t2, v) or "No Match" in (t1, t2):
         messagebox.showwarning("Missing Info", "Please fill all fields and select matching teams.")
         return
     if t1 == t2:
@@ -348,13 +453,11 @@ def schedule_game():
              messagebox.showwarning("Invalid Time", "End time must be after start time.")
              return
              
-        # --- NEW: Check if Date/Time is in the Past ---
-        # Combine the date object and time object into a single datetime
+        # Check if Date/Time is in the Past
         full_start_dt = datetime.combine(game_date, s_time)
         if full_start_dt < datetime.now():
              messagebox.showwarning("Invalid Date/Time", "Cannot schedule a game in the past.")
              return
-        # -----------------------------------------------
 
     except Exception as e:
         print(e)
