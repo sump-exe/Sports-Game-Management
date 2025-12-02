@@ -86,10 +86,32 @@ def refresh_standings_rows():
         s, e = _season_windows_for_year(year)
         start_iso, end_iso = s.isoformat(), e.isoformat()
         
-        # Season Header
+        # --- Season Header & MVP Display ---
         header_frame = ctk.CTkFrame(frame, fg_color="#333333")
         header_frame.pack(fill="x", pady=(15, 5))
-        ctk.CTkLabel(header_frame, text=_format_season_header(year), font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
+        
+        base_header_text = _format_season_header(year)
+        final_header_text = base_header_text
+
+        # Fetch MVP for this specific season year to display in header
+        cur_mvp = mydb.cursor()
+        try:
+            cur_mvp.execute("""
+                SELECT p.name, t.teamName 
+                FROM mvps m 
+                JOIN players p ON m.player_id = p.id 
+                JOIN teams t ON m.team_id = t.id 
+                WHERE m.year = ?
+            """, (year,))
+            mvp_row = cur_mvp.fetchone()
+            if mvp_row:
+                final_header_text += f"   |   👑 MVP: {mvp_row['name']} ({mvp_row['teamName']})"
+        except Exception:
+            pass
+        finally:
+            cur_mvp.close()
+
+        ctk.CTkLabel(header_frame, text=final_header_text, font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
         
         # Table Headers
         cols = ctk.CTkFrame(frame, fg_color="transparent")
@@ -102,9 +124,6 @@ def refresh_standings_rows():
         cur = mydb.cursor()
         
         # --- THE CORE QUERY ---
-        # 1. WINS: Count games where this team is the winner_team_id
-        # 2. LOSSES: Count games where this team played but did NOT win (and there was a winner)
-        # 3. POINTS: Sum team1_score or team2_score depending on which side the team was on
         query = """
             SELECT 
                 t.id, 
@@ -355,6 +374,8 @@ def assign_mvp():
         mydb.commit()
         messagebox.showinfo("Success", f"MVP assigned for Season {season_year + 1}.")
         on_year_change() # Refresh label
+        # Also refresh table to show new header immediately
+        refresh_standings_rows()
     except Exception as e:
         messagebox.showerror("Error", str(e))
     finally:
@@ -378,5 +399,6 @@ def clear_mvp():
         mydb.commit()
         messagebox.showinfo("Success", "MVP cleared.")
         on_year_change()
+        refresh_standings_rows()
     finally:
         cur.close()
