@@ -170,6 +170,15 @@ def show_team_players(team_name, players_frame):
                             validated['ok'] = False
                             confirm_btn.configure(state="disabled")
                             return
+                        
+                        # --- NEW VALIDATION: No Numbers in Player Name ---
+                        if any(char.isdigit() for char in new_name):
+                            msg_lbl.configure(text="Player name cannot contain numbers.")
+                            validated['ok'] = False
+                            confirm_btn.configure(state="disabled")
+                            return
+                        # ------------------------------------------------
+
                         if jersey_txt == "":
                             msg_lbl.configure(text="Jersey number is required.")
                             validated['ok'] = False
@@ -265,6 +274,12 @@ def show_team_players(team_name, players_frame):
         if len(name) > 50:
             messagebox.showwarning("Invalid", "Player name must be 50 characters or fewer.")
             return
+            
+        # --- NEW VALIDATION: No Numbers in Player Name ---
+        if any(char.isdigit() for char in name):
+            messagebox.showwarning("Invalid", "Player name cannot contain numbers.")
+            return
+        # ------------------------------------------------
 
         jersey_text = jersey_entry.get().strip()
         if jersey_text == "":
@@ -384,6 +399,12 @@ def open_add_team_popup(prefill_name=None):
         if not name:
             messagebox.showwarning("Missing", "Team name cannot be empty.")
             return
+
+        # --- NEW VALIDATION: No Numbers in Team Name ---
+        if any(char.isdigit() for char in name):
+            messagebox.showwarning("Invalid", "Team name cannot contain numbers.")
+            return
+        # -----------------------------------------------
 
         if editing and original_name and original_name != name:
             cur = sched_mgr.mydb.cursor()
