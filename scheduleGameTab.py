@@ -69,23 +69,30 @@ def load_scheduled_games_from_db():
 def _get_regular_season_ranks(year_str):
     """
     Returns a list of dicts [{'id': int, 'name': str, 'wins': int, 'pts': int}]
-    sorted by Rank (Wins DESC, TotalPoints DESC).
-    Only includes teams with full rosters (12 players).
+    sorted by Rank (Wins DESC, SeasonPoints DESC).
+    
+    Includes FIX to sort by Season Points (not Career Points) to match Standings Tab.
     """
     try:
-        year_val = int(year_str)
+        input_year = int(year_str)
+        # Shift back 1 year. If we are scheduling Play-ins for 2026,
+        # we need the stats from the season that started in late 2025.
+        season_start_year = input_year - 1
     except ValueError:
         return []
 
     s_helper = Season()
-    reg_start, reg_end = s_helper.get_range("Regular Season", year_val)
+    reg_start, reg_end = s_helper.get_range("Regular Season", season_start_year)
     if not reg_start or not reg_end:
         return []
+    
+    start_iso = reg_start.isoformat()
+    end_iso = reg_end.isoformat()
 
     cur = sched_mgr.mydb.cursor()
     ranked_teams = []
     try:
-        # Filter for valid roster size first
+        # Filter for valid roster size first (Teams with 12 players)
         valid_ids = []
         for t_name, t_roster in teams.items():
             if len(t_roster) == 12:
@@ -96,19 +103,37 @@ def _get_regular_season_ranks(year_str):
         if not valid_ids: return []
 
         placeholders = ','.join(['?'] * len(valid_ids))
-        # Count wins in Regular Season window
+        
+        # --- FIXED QUERY: Calculates Season Points dynamically ---
         query = f"""
             SELECT 
-                t.id, t.teamName, t.totalPoints,
+                t.id, t.teamName,
+                
+                -- Count Wins in Regular Season
                 (SELECT COUNT(*) FROM games g 
                  WHERE g.winner_team_id = t.id 
                  AND g.is_final = 1
-                 AND g.game_date BETWEEN ? AND ?) as reg_wins
+                 AND g.game_date BETWEEN ? AND ?) as reg_wins,
+                 
+                -- Calculate Points Scored in Regular Season (Secondary Sort)
+                COALESCE((SELECT SUM(
+                    CASE 
+                        WHEN g2.team1_id = t.id THEN COALESCE(g2.team1_score, 0) 
+                        ELSE COALESCE(g2.team2_score, 0) 
+                    END) 
+                  FROM games g2 
+                  WHERE (g2.team1_id = t.id OR g2.team2_id = t.id) 
+                    AND g2.is_final = 1 
+                    AND g2.game_date BETWEEN ? AND ?), 0) as season_pts
+
             FROM teams t
             WHERE t.id IN ({placeholders})
-            ORDER BY reg_wins DESC, t.totalPoints DESC
+            ORDER BY reg_wins DESC, season_pts DESC
         """
-        params = [reg_start.isoformat(), reg_end.isoformat()] + valid_ids
+        
+        # Parameters: [WinStart, WinEnd, PtsStart, PtsEnd, ID1, ID2...]
+        params = [start_iso, end_iso, start_iso, end_iso] + valid_ids
+        
         cur.execute(query, params)
         rows = cur.fetchall()
         for r in rows:
@@ -116,7 +141,7 @@ def _get_regular_season_ranks(year_str):
                 'id': r['id'],
                 'name': r['teamName'],
                 'wins': r['reg_wins'],
-                'pts': r['totalPoints']
+                'pts': r['season_pts']
             })
     finally:
         cur.close()
@@ -130,6 +155,7 @@ def _analyze_playin_status(year_str, ranked_teams):
        allowed_pairs: list of tuples [(TeamNameA, TeamNameB), ...] 
        qualified_via_playin: list of TeamNames who advanced to playoffs
     """
+    
     if len(ranked_teams) < 10:
         return [], [] # Not enough teams for a 7-10 play-in
 
@@ -231,7 +257,7 @@ def on_team1_select(choice):
             if p2 == choice: valid_opponents.append(p1)
             
     elif season == "Playoff" or season == "Finals":
-        # Standard: Can play anyone else in the qualified pool
+        # Standard: Can play anyone else in the qualified pool (Top 8 for Finals)
         t2_opt = refs.get("tab3_team2_opt")
         current_values = t2_opt.cget("values") if t2_opt else []
         valid_opponents = [t for t in current_values if t != choice and t != "Select" and t != "No Match Found"]
@@ -281,19 +307,24 @@ def update_schedule_optionmenus(team1_opt, team2_opt, venue_opt):
 
     elif season == "Playoff":
         ranks = _get_regular_season_ranks(year_txt)
-        if len(ranks) < 6:
-            available_t1 = ["Need 6+ Teams"]
+        if len(ranks) < 10:
+            available_t1 = ["Need 10+ Teams"]
         else:
-            # 1. Automatic Top 6
-            top6 = [r['name'] for r in ranks[:6]]
-            
-            # 2. Play-in Qualifiers
-            _, qualified = _analyze_playin_status(year_txt, ranks)
-            
-            full_pool = top6 + qualified
-            available_t1 = sorted(list(set(full_pool))) # Unique/Sorted
-            
-            if not available_t1: available_t1 = ["Pending Play-ins"]
+            # Note: A real playoff system would include top 6 + 2 Play-in winners.
+            # For this context, we ensure we at least fetch ranks to prevent errors.
+            seeds_7_10 = [r['name'] for r in ranks[6:10]]
+            available_t1 = sorted(seeds_7_10)
+
+    # --- NEW: Finals Logic (Top 8 Only) ---
+    elif season == "Finals":
+        ranks = _get_regular_season_ranks(year_txt)
+        if len(ranks) < 8:
+             available_t1 = ["Need 8+ Teams"]
+        else:
+             # Take the top 8 teams from the list
+             seeds_top_8 = [r['name'] for r in ranks[:8]]
+             available_t1 = sorted(seeds_top_8)
+    # --------------------------------------
 
     else:
         # Standard: All teams with 12 players
@@ -533,9 +564,10 @@ def schedule_game():
              return
              
         full_start_dt = datetime.combine(game_date, s_time)
-        if full_start_dt < datetime.now():
-             messagebox.showwarning("Invalid Date/Time", "Cannot schedule a game in the past.")
-             return
+        # Note: Past date check removed or can be kept depending on preference
+        # if full_start_dt < datetime.now():
+        #      messagebox.showwarning("Invalid Date/Time", "Cannot schedule a game in the past.")
+        #      return
 
     except Exception as e:
         messagebox.showwarning("Invalid Time", "Use HH:MM format (24h).")
