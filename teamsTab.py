@@ -120,9 +120,6 @@ def show_team_players(team_name, players_frame):
     except Exception:
         pass
     
-    # Logic: If the search query matches the team name (e.g. searching "Lakers"), show all players.
-    # If the search query does NOT match the team name, assume user is searching for a player,
-    # so filter and show only players whose names contain the query.
     filter_active = False
     if search_query and (search_query not in team_name.lower()):
         filter_active = True
@@ -299,7 +296,8 @@ def show_team_players(team_name, players_frame):
     entry = ctk.CTkEntry(add_frame, placeholder_text="Player name")
     entry.pack(side="left", expand=True, fill="x", padx=(8, 6), pady=8)
 
-    def add_player_cmd():
+    # MODIFIED: accept 'event' arg to allow binding to keys
+    def add_player_cmd(event=None):
         name = entry.get().strip()
         if not name:
             messagebox.showwarning("Missing", "Enter a player name.")
@@ -358,12 +356,20 @@ def show_team_players(team_name, players_frame):
         load_teams_from_db()
         entry.delete(0, "end")
         jersey_entry.delete(0, "end")
+        
+        # Focus back on jersey for rapid entry
+        jersey_entry.focus_set()
+
         show_team_players(team_name, players_frame)
         update_schedule_optionmenus(
             refs.get('tab3_team1_opt'),
             refs.get('tab3_team2_opt'),
             refs.get('tab3_venue_opt')
         )
+
+    # Bind Enter key to triggering add_player_cmd
+    jersey_entry.bind("<Return>", add_player_cmd)
+    entry.bind("<Return>", add_player_cmd)
 
     add_btn = ctk.CTkButton(add_frame, text="Add Player", command=add_player_cmd, width=100, hover_color="#4A90E2")
     add_btn.pack(side="right", padx=(6, 8), pady=8)
@@ -428,7 +434,7 @@ def open_add_team_popup(prefill_name=None):
         original_name = prefill_name
         name_entry.insert(0, prefill_name)
 
-    def save_team():
+    def save_team(event=None):
         name = name_entry.get().strip()
         if not name:
             messagebox.showwarning("Missing", "Team name cannot be empty.")
@@ -483,6 +489,8 @@ def open_add_team_popup(prefill_name=None):
         update_schedule_optionmenus(refs.get('tab3_team1_opt'), refs.get('tab3_team2_opt'), refs.get('tab3_venue_opt'))
         win.destroy()
 
+    name_entry.bind("<Return>", save_team)
+    
     btn_text = "Save Changes" if prefill_name else "Add Team"
     ctk.CTkButton(win, text=btn_text, command=save_team, hover_color="#4A90E2").pack(pady=12)
 
