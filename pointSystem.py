@@ -124,13 +124,21 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
         finally:
             cur.close()
 
-    def add_points(player_id, entry_widget, label_widget, team_id):
+    def modify_points(player_id, entry_widget, label_widget, team_id, multiplier=1):
+        """
+        multiplier: 1 for ADD, -1 for SUBTRACT
+        """
         # 1. Capture and Validate Points
         txt = entry_widget.get().strip()
         if not txt:
             return
         try:
-            pts_inc = int(txt) 
+            pts_val = int(txt) 
+            # --- NEW VALIDATION: Must be > 0 ---
+            if pts_val <= 0:
+                messagebox.showwarning("Invalid", "Points input must be greater than 0.")
+                entry_widget.delete(0, "end")
+                return
         except ValueError:
             messagebox.showwarning("Invalid", "Points must be an integer.")
             entry_widget.delete(0, "end")
@@ -139,22 +147,28 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
         # 2. Check if Game is Final
         sm = ScheduleManager()
         if sm.isGameFinal(game_id):
-            messagebox.showwarning("Game Final", "This game has ended. Cannot add points.")
+            messagebox.showwarning("Game Final", "This game has ended. Cannot modify points.")
             entry_widget.delete(0, "end")
             return
+        
+        # Calculate actual change (+ve or -ve)
+        pts_inc = pts_val * multiplier
 
-        # 3. Get Season Year (for career stats if needed)
-        game_res = sm.gameResults(game_id)
-        if not game_res:
-            messagebox.showerror("Error", "Game not found.")
-            return
-        game_date = game_res['date']
-        season_helper = Season(2024)
-        season_year = season_helper.get_current_season_year(game_date)
-
-        # 4. Update Database
+        # 3. Check for Negative Total (if subtracting)
         cur = mydb.cursor()
         try:
+            if multiplier == -1:
+                cur.execute("SELECT points FROM game_player_stats WHERE game_id = ? AND player_id = ?", (game_id, player_id))
+                row = cur.fetchone()
+                current_game_pts = row['points'] if row else 0
+                
+                if current_game_pts + pts_inc < 0:
+                    messagebox.showwarning("Invalid Operation", f"Player only has {current_game_pts} points. Cannot subtract {pts_val}.")
+                    entry_widget.delete(0, "end")
+                    cur.close()
+                    return
+
+            # 4. Update Database
             # A. Update GAME SPECIFIC STATS (game_player_stats)
             # UPSERT: Insert if not exists, else update
             cur.execute("""
@@ -162,9 +176,9 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
                 VALUES (?, ?, ?)
                 ON CONFLICT(game_id, player_id) 
                 DO UPDATE SET points = points + ?
-            """, (game_id, player_id, pts_inc, pts_inc))
+            """, (game_id, player_id, pts_inc, pts_inc)) # For insert, uses pts_inc (e.g. 5 or -5). Note: insert -5 technically possible via SQL but checked above.
 
-            # B. Update Total (Career) Points in Players table (Optional, but keeps legacy consistent)
+            # B. Update Total (Career) Points in Players table
             cur.execute("UPDATE players SET points = points + ? WHERE id = ?", (pts_inc, player_id))
             
             # C. Update GAMES table score (Critical for viewGamesTab)
@@ -191,14 +205,8 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
             r = cur.fetchone()
             new_player_game_points = r['points'] if r else 0
             
-            # E. Update Team Season Total (Optional logic)
-            # This part is tricky if "team_season_totals" expects cumulative. 
-            # For now, we leave it as is from original code (accumulating), 
-            # or we could sum all games. Let's trust the logic is just adding to the total.
-            # (Omitted to prevent double-counting complexity, but can be re-enabled if needed)
-            
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to add points: {e}")
+            messagebox.showerror("Error", f"Failed to modify points: {e}")
             return
         finally:
             cur.close()
@@ -217,10 +225,12 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
         entry_widget.delete(0, "end")
 
     def disable_interactive_widgets():
-        for ent, btn in interactive_widgets:
+        for ent, btn_a, btn_s in interactive_widgets:
             try: ent.configure(state="disabled")
             except: pass
-            try: btn.configure(state="disabled")
+            try: btn_a.configure(state="disabled")
+            except: pass
+            try: btn_s.configure(state="disabled")
             except: pass
 
     def load_team_game_data(t_id, g_id):
@@ -277,14 +287,20 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
                 lbl = ctk.CTkLabel(row, text=f"{name_text} | Points: {p['points']}", anchor="w")
                 lbl.pack(side="left", fill="x", expand=True, padx=(6,0))
                 
-                ent = ctk.CTkEntry(row, width=80, placeholder_text="Points")
+                ent = ctk.CTkEntry(row, width=60, placeholder_text="Pts")
                 ent.pack(side="left", padx=(6,4))
                 
-                btn = ctk.CTkButton(row, text="Add", width=60,
-                                    command=lambda pid=p['id'], e=ent, l=lbl, tid=team_id: add_points(pid, e, l, tid))
-                btn.pack(side="left", padx=(4,6))
+                # ADD BUTTON
+                btn_add = ctk.CTkButton(row, text="Add", width=50, fg_color="#4CAF50", hover_color="#45a049",
+                                    command=lambda pid=p['id'], e=ent, l=lbl, tid=team_id: modify_points(pid, e, l, tid, 1))
+                btn_add.pack(side="left", padx=(2,2))
+
+                # SUB BUTTON
+                btn_sub = ctk.CTkButton(row, text="Sub", width=50, fg_color="#D9534F", hover_color="#C9302C",
+                                    command=lambda pid=p['id'], e=ent, l=lbl, tid=team_id: modify_points(pid, e, l, tid, -1))
+                btn_sub.pack(side="left", padx=(2,6))
                 
-                interactive_widgets.append((ent, btn))
+                interactive_widgets.append((ent, btn_add, btn_sub))
         
         total = get_game_team_total(game_id, team_id)
         total_label = ctk.CTkLabel(frame, text=f"Total Points: {total}", font=ctk.CTkFont(size=14, weight="bold"))
@@ -323,7 +339,7 @@ def load_point_system_into_frame(parent, game_id, team1_id, team2_id):
         cur = mydb.cursor()
         winner_id = None
         try:
-            # Re-fetch the latest scores from GAMES table (updated by add_points)
+            # Re-fetch the latest scores from GAMES table (updated by modify_points)
             cur.execute("SELECT team1_score, team2_score, team1_id, team2_id FROM games WHERE id = ?", (game_id,))
             row = cur.fetchone()
             if row:
