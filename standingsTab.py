@@ -79,7 +79,7 @@ def refresh_standings_rows():
     years = _compute_season_start_years_with_games()
     
     if not years:
-        ctk.CTkLabel(frame, text="No finalized games found in database.").pack(pady=20)
+        ctk.CTkLabel(frame, text="No scheduled games found in database.").pack(pady=20)
         return
 
     for year in years:
@@ -279,6 +279,11 @@ def refresh_mvp_controls():
 def on_year_change():
     y_var = _widgets.get("year_var")
     lbl = _widgets.get("mvp_display_label")
+    team_opt = _widgets.get("team_opt")
+    team_var = _widgets.get("team_var")
+    player_opt = _widgets.get("player_opt")
+    player_var = _widgets.get("player_var")
+
     if not y_var: return
     
     sel = y_var.get()
@@ -286,6 +291,7 @@ def on_year_change():
     start_year = display_map.get(sel)
     
     if start_year:
+        # 1. Update MVP Label
         cur = mydb.cursor()
         try:
             cur.execute("""
@@ -300,10 +306,36 @@ def on_year_change():
                 lbl.configure(text=f"Current MVP: {r['name']} ({r['teamName']})")
             else:
                 lbl.configure(text="Current MVP: None")
+            
+            # 2. Filter Team Dropdown (Show only teams active in this season)
+            s, e = _season_windows_for_year(start_year)
+            cur.execute("""
+                SELECT DISTINCT t.teamName 
+                FROM teams t
+                JOIN games g ON (t.id = g.team1_id OR t.id = g.team2_id)
+                WHERE g.game_date BETWEEN ? AND ?
+                ORDER BY t.teamName
+            """, (s.isoformat(), e.isoformat()))
+            
+            valid_teams = [row['teamName'] for row in cur.fetchall()]
+            
+            if team_opt:
+                team_opt.configure(values=["Select Team"] + valid_teams)
+            
+            # Reset dropdowns if the currently selected team is invalid for this season
+            if team_var and team_var.get() != "Select Team" and team_var.get() not in valid_teams:
+                team_var.set("Select Team")
+                if player_opt: player_opt.configure(values=["Select Player"])
+                if player_var: player_var.set("Select Player")
+                
         finally:
             cur.close()
     else:
         lbl.configure(text="Current MVP: None")
+        # If no season selected, revert to showing all teams
+        all_teams = sorted(list(_widgets.get("team_map", {}).keys()))
+        if team_opt:
+             team_opt.configure(values=["Select Team"] + all_teams)
 
 def on_team_change():
     t_var = _widgets.get("team_var")
