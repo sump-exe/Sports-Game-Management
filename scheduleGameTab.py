@@ -504,6 +504,13 @@ def schedule_game():
     # 3. Parse Date/Time
     try:
         y_val = int(year_txt)
+
+        # --- NEW VALIDATION: Year Limit ---
+        if y_val > 9999:
+            messagebox.showwarning("Invalid Year", "Year cannot exceed 9999.")
+            return
+        # ----------------------------------
+
         pmd = datetime.strptime(md, "%m-%d")
         game_date = _date(y_val, pmd.month, pmd.day)
     except:
