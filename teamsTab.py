@@ -458,7 +458,7 @@ def open_add_team_popup(prefill_name=None):
             return
         # -----------------------------------------------
 
-        if editing and original_name and original_name != name:
+        if editing:
             cur = sched_mgr.mydb.cursor()
             try:
                 cur.execute("SELECT id FROM teams WHERE teamName = ?", (original_name,))
@@ -467,27 +467,48 @@ def open_add_team_popup(prefill_name=None):
                     messagebox.showwarning("Not found", "Original team not found in DB.")
                     return
                 team_id = row['id']
-                try:
-                    cur.execute("UPDATE teams SET teamName = ? WHERE id = ?", (name, team_id))
-                    sched_mgr.mydb.commit()
-                except Exception:
-                    messagebox.showwarning("Exists", "A team with that name already exists.")
+                
+                # Check for duplicate name ONLY if the name has changed
+                if name != original_name:
+                    cur.execute("SELECT 1 FROM teams WHERE teamName = ?", (name,))
+                    if cur.fetchone():
+                        messagebox.showwarning("Error", f"Team '{name}' already exists.")
+                        return
+
+                cur.execute("UPDATE teams SET teamName = ? WHERE id = ?", (name, team_id))
+                sched_mgr.mydb.commit()
+            except Exception as e:
+                messagebox.showerror("Error", f"Database error: {e}")
+                return
+            finally:
+                cur.close()
+
+        else:
+            # Adding a new team
+            # First check if it already exists
+            cur = sched_mgr.mydb.cursor()
+            try:
+                cur.execute("SELECT 1 FROM teams WHERE teamName = ?", (name,))
+                if cur.fetchone():
+                    messagebox.showwarning("Error", f"Team '{name}' already exists.")
                     return
             finally:
                 cur.close()
-        else:
+
+            # Proceed to add
             try:
                 t = Team(name)
                 sched_mgr.addTeam(t)
-            except Exception:
-                messagebox.showwarning("Exists", "Team may already exist or could not be added.")
+            except Exception as e:
+                messagebox.showwarning("Error", f"Team could not be added: {e}")
                 return
 
         load_teams_from_db()
         try:
             from standingsTab import standings as _standings
             if editing and original_name and original_name in _standings:
-                _standings[name] = _standings.pop(original_name)
+                if name != original_name:
+                    _standings[name] = _standings.pop(original_name)
             elif name not in _standings:
                 _standings[name] = {"mvp": "N/A", "wins": 0}
         except Exception:
@@ -495,6 +516,11 @@ def open_add_team_popup(prefill_name=None):
 
         try:
             refresh_team_sidebar(refs.get('teams_sidebar_scroll'), refs.get('team_players_area'), refs.get('teams_buttons'), refs.get('teams_search_var'))
+            
+            # If currently viewing the edited team, allow the sidebar to update/reselect naturally
+            if editing and original_name and refs.get('current_team') == original_name:
+                show_team_players(name, refs.get('team_players_area'))
+
         except Exception:
             pass
 
