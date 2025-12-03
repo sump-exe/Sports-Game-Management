@@ -80,6 +80,16 @@ def show_venue_details(venue_name):
     def delete_venue():
         if messagebox.askyesno("Delete Venue", f"Delete '{venue_name}'?"):
             venues.pop(venue_name, None)
+            cur = sched_mgr.mydb.cursor()
+            try:
+                # Delete from DB by name
+                cur.execute("DELETE FROM venues WHERE venueName = ?", (venue_name,))
+                sched_mgr.mydb.commit()
+            except Exception as e:
+                print(f"Error deleting venue: {e}")
+            finally:
+                cur.close()
+
             try:
                 refresh_venue_sidebar(refs.get('venues_sidebar_scroll'), refs.get('venues_buttons'), refs.get('venues_search_var'))
             except Exception:
@@ -194,23 +204,60 @@ def open_add_venue_popup(prefill_name=None):
             return
 
         cap_int = int(cap)
-        # --- NEW VALIDATION ---
         if cap_int <= 0:
             messagebox.showwarning("Invalid Capacity", "Capacity must be greater than 0.")
             return
-        # ----------------------
 
-        if editing and original_name and original_name != name:
-            venues.pop(original_name, None)
+        cur = sched_mgr.mydb.cursor()
         try:
-            v = Venue(name, addr, cap_int)
-            sched_mgr.addVenue(v)
-        except Exception:
-            messagebox.showwarning("Error", "Could not save venue (it may already exist).")
+            if editing:
+                # 1. Get ID of the venue we are editing using original_name
+                cur.execute("SELECT id FROM venues WHERE venueName = ?", (original_name,))
+                row = cur.fetchone()
+                if not row:
+                    messagebox.showerror("Error", "Original venue not found in DB.")
+                    return
+                vid = row['id']
+
+                # 2. Check if new name exists (only if name changed)
+                if name != original_name:
+                    cur.execute("SELECT 1 FROM venues WHERE venueName = ?", (name,))
+                    if cur.fetchone():
+                        messagebox.showwarning("Error", f"Venue '{name}' already exists.")
+                        return
+
+                # 3. Update existing record
+                cur.execute("""
+                    UPDATE venues 
+                    SET venueName = ?, location = ?, capacity = ? 
+                    WHERE id = ?
+                """, (name, addr, cap_int, vid))
+                sched_mgr.mydb.commit()
+            
+            else:
+                # Adding new venue
+                # Check for duplicate name
+                cur.execute("SELECT 1 FROM venues WHERE venueName = ?", (name,))
+                if cur.fetchone():
+                    messagebox.showwarning("Error", f"Venue '{name}' already exists.")
+                    return
+
+                v = Venue(name, addr, cap_int)
+                sched_mgr.addVenue(v)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Database error: {e}")
             return
+        finally:
+            cur.close()
+
         load_venues_from_db()
         try:
             refresh_venue_sidebar(refs.get('venues_sidebar_scroll'), refs.get('venues_buttons'), refs.get('venues_search_var'))
+            
+            if editing and original_name and refs.get('venue_details_frame'):
+                show_venue_details(name)
+
         except Exception:
             pass
         update_schedule_optionmenus(refs.get('tab3_team1_opt'), refs.get('tab3_team2_opt'), refs.get('tab3_venue_opt'))
