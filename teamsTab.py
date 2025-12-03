@@ -8,6 +8,7 @@ refs = {}
 load_scheduled_games_from_db = lambda: None
 refresh_scheduled_games_table = lambda *a, **k: None
 update_schedule_optionmenus = lambda *a, **k: None
+refresh_standings_table = lambda *a, **k: None  # Added placeholder
 
 teams = {}
 
@@ -72,14 +73,25 @@ def show_team_players(team_name, players_frame):
             cur.close()
 
         teams.pop(team_name, None)
+        
+        # Clean up any legacy standings references if they exist
         try:
             from standingsTab import standings as _standings
             _standings.pop(team_name, None)
         except Exception:
             pass
 
+        # Refresh dependent UIs
         load_scheduled_games_from_db()
         refresh_scheduled_games_table(refs.get('scheduled_games_table'))
+        
+        # --- REFRESH STANDINGS TABLE HERE ---
+        try:
+            if refs.get('standings_table'):
+                refresh_standings_table(refs.get('standings_table'))
+        except Exception as e:
+            print(f"Error refreshing standings: {e}")
+
         try:
             refresh_team_sidebar(refs.get('teams_sidebar_scroll'), refs.get('team_players_area'), refs.get('teams_buttons'), refs.get('teams_search_var'))
         except Exception:

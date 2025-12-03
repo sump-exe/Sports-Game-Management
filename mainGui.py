@@ -42,6 +42,7 @@ refresh_standings_table = file5.refresh_standings_table
 file1.load_scheduled_games_from_db = load_scheduled_games_from_db
 file1.refresh_scheduled_games_table = refresh_scheduled_games_table
 file1.update_schedule_optionmenus = update_schedule_optionmenus
+file1.refresh_standings_table = refresh_standings_table  # INJECTED REFRESH FUNCTION
 
 file2.update_schedule_optionmenus = update_schedule_optionmenus
 
