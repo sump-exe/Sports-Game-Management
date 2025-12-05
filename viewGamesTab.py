@@ -4,41 +4,7 @@ from datetime import datetime, date as _date
 from theDB import *
 
 refs = None
-
-def show_game_details(index, game_data=None):
-    game = game_data
-    if not game: return
-    
-    if refs and isinstance(refs, dict):
-        refs["selected_game"] = game
-    
-    s1 = int(game.get('team1_score') or 0)
-    s2 = int(game.get('team2_score') or 0)
-    
-    is_final = bool(game.get('is_final'))
-    
-    winner_text = "TBD"
-    if is_final:
-        if game.get('winner_team_id'):
-            w_id = game.get('winner_team_id')
-            if w_id == game.get('team1_id'):
-                winner_text = game.get('team1')
-            elif w_id == game.get('team2_id'):
-                winner_text = game.get('team2')
-        else:
-            winner_text = "Tie"
-
-    details = (
-        f"Matchup: {game.get('team1')} vs {game.get('team2')}\n"
-        f"Venue:   {game.get('venue')}\n\n"
-        f"Date:    {game.get('date')}\n"
-        f"Time:    {game.get('start')} - {game.get('end')}\n\n"
-        f"Score:   {s1} - {s2}\n"
-        f"Status:  {'Final' if is_final else 'Active'}\n"
-        f"Winner:  {winner_text if is_final else 'N/A'}"
-    )
-    if refs.get("details_content"):
-        refs["details_content"].configure(text=details)
+scheduled_games = [] 
 
 def _season_windows_for_year(year):
     s_helper = Season()
@@ -116,33 +82,103 @@ def _format_season_header(year):
     s, e = _season_windows_for_year(year)
     return f"Season {e.year} — {s} → {e}"
 
-def refresh_scheduled_games_table(table_frame):
-    for widget in table_frame.winfo_children():
-        widget.destroy()
+class GamePreviewPanel:
+    def show_details(self, index, game_data):
+        game = game_data
+        if not game: return
+        
+        if refs and isinstance(refs, dict):
+            refs["selected_game"] = game
+        
+        s1 = int(game.get('team1_score') or 0)
+        s2 = int(game.get('team2_score') or 0)
+        
+        is_final = bool(game.get('is_final'))
+        
+        winner_text = "TBD"
+        if is_final:
+            if game.get('winner_team_id'):
+                w_id = game.get('winner_team_id')
+                if w_id == game.get('team1_id'):
+                    winner_text = game.get('team1')
+                elif w_id == game.get('team2_id'):
+                    winner_text = game.get('team2')
+            else:
+                winner_text = "Tie"
 
-    src_games = _fetch_games_from_db_direct()
-    
-    try:
-        import scheduleGameTab as sgt
-        sgt.scheduled_games.clear()
-        sgt.scheduled_games.extend(src_games)
-    except Exception:
-        pass
+        details = (
+            f"Matchup: {game.get('team1')} vs {game.get('team2')}\n"
+            f"Venue:   {game.get('venue')}\n\n"
+            f"Date:    {game.get('date')}\n"
+            f"Time:    {game.get('start')} - {game.get('end')}\n\n"
+            f"Score:   {s1} - {s2}\n"
+            f"Status:  {'Final' if is_final else 'Active'}\n"
+            f"Winner:  {winner_text if is_final else 'N/A'}"
+        )
+        if refs.get("details_content"):
+            refs["details_content"].configure(text=details)
 
-    years = _compute_season_start_years_with_games()
+class GameButtonControls:
+    def __init__(self, preview_handler):
+        self.preview = preview_handler
 
-    if not years:
-        ctk.CTkLabel(table_frame, text="No scheduled seasons found (DB empty or dates invalid).").pack(padx=8, pady=8)
-        return
+    def create_buttons(self, parent_frame, game_data, index_in_group):
+        ctk.CTkButton(parent_frame, text="View", width=60, 
+                      command=lambda g=game_data, i=index_in_group: self.preview.show_details(i, g)
+                      ).grid(row=0, column=7, padx=4)
+        
+        ctk.CTkButton(parent_frame, text="Delete", width=60, fg_color="#F44336", 
+                      command=lambda gid=game_data['id']: self.delete_logic(gid)
+                      ).grid(row=0, column=8, padx=4)
 
-    for year in years:
+    def delete_logic(self, game_id):
+        if messagebox.askyesno("Delete", "Delete this game?"):
+            sm = ScheduleManager()
+            try:
+                sm.deleteGame(game_id)
+                if refs.get('scheduled_games_table'):
+                    refresh_scheduled_games_table(refs['scheduled_games_table'])
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not delete game: {e}")
+
+class ScheduledGamesDisplay:
+    def __init__(self, container):
+        self.container = container
+        self.preview_handler = GamePreviewPanel()
+        self.button_controls = GameButtonControls(self.preview_handler)
+
+    def render(self):
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+        src_games = _fetch_games_from_db_direct()
+        
+        scheduled_games.clear()
+        scheduled_games.extend(src_games)
+        try:
+            import scheduleGameTab as sgt
+            sgt.scheduled_games.clear()
+            sgt.scheduled_games.extend(src_games)
+        except Exception:
+            pass
+
+        years = _compute_season_start_years_with_games()
+
+        if not years:
+            ctk.CTkLabel(self.container, text="No scheduled seasons found (DB empty or dates invalid).").pack(padx=8, pady=8)
+            return
+
+        for year in years:
+            self._render_season_block(year, src_games)
+
+    def _render_season_block(self, year, all_games):
         start_dt, end_dt = _season_windows_for_year(year)
         
-        h = ctk.CTkFrame(table_frame, fg_color="#1E1E1E")
+        h = ctk.CTkFrame(self.container, fg_color="#1E1E1E")
         h.pack(fill="x", padx=8, pady=(12, 6))
         ctk.CTkLabel(h, text=_format_season_header(year), font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=8, pady=6)
 
-        cols = ctk.CTkFrame(table_frame, fg_color="#1F1F1F")
+        cols = ctk.CTkFrame(self.container, fg_color="#1F1F1F")
         cols.pack(fill="x", padx=8, pady=(0, 4))
         
         headers = ["Team 1", "Team 2", "Venue", "Date", "Season", "Score", "Status", "View", "Delete"]
@@ -151,7 +187,7 @@ def refresh_scheduled_games_table(table_frame):
             ctk.CTkLabel(cols, text=t, font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=i, padx=8, pady=4, sticky="w")
 
         group_games = []
-        for g in src_games:
+        for g in all_games:
             dt = _parse_iso(g.get('date'))
             if dt and start_dt <= dt <= end_dt:
                 group_games.append(g)
@@ -159,51 +195,48 @@ def refresh_scheduled_games_table(table_frame):
         group_games.sort(key=lambda x: (x.get('date', ''), x.get('start', '')))
 
         if not group_games:
-            ctk.CTkLabel(table_frame, text="(No games in this season window)").pack()
-            continue
+            ctk.CTkLabel(self.container, text="(No games in this season window)").pack()
+            return
 
         for idx_in_group, game in enumerate(group_games):
-            row = ctk.CTkFrame(table_frame, fg_color="#2A2A2A")
-            row.pack(fill="x", padx=8, pady=2)
-            
-            for i in range(9): 
-                row.grid_columnconfigure(i, weight=1 if i <= 6 else 0)
+            self._render_game_row(game, idx_in_group)
 
-            ctk.CTkLabel(row, text=game.get('team1')).grid(row=0, column=0, sticky="w", padx=8)
-            ctk.CTkLabel(row, text=game.get('team2')).grid(row=0, column=1, sticky="w", padx=8)
-            ctk.CTkLabel(row, text=game.get('venue')).grid(row=0, column=2, sticky="w", padx=8)
-            ctk.CTkLabel(row, text=game.get('date')).grid(row=0, column=3, sticky="w", padx=8)
-            ctk.CTkLabel(row, text=_season_from_iso(game.get('date'))).grid(row=0, column=4, sticky="w", padx=8)
-            
-            s1 = int(game.get('team1_score') or 0)
-            s2 = int(game.get('team2_score') or 0)
-            score_txt = f"{s1} - {s2}"
-            ctk.CTkLabel(row, text=score_txt).grid(row=0, column=5, sticky="w", padx=8)
+    def _render_game_row(self, game, idx):
+        row = ctk.CTkFrame(self.container, fg_color="#2A2A2A")
+        row.pack(fill="x", padx=8, pady=2)
+        
+        for i in range(9): 
+            row.grid_columnconfigure(i, weight=1 if i <= 6 else 0)
 
-            is_fin = bool(game.get('is_final'))
-            status = "Final" if is_fin else "Active"
-            color = "#D9534F" if is_fin else "#7CFC00"
-            ctk.CTkLabel(row, text=status, text_color=color).grid(row=0, column=6, sticky="w", padx=8)
-            
-            ctk.CTkButton(row, text="View", width=60, command=lambda g=game, i=idx_in_group: show_game_details(i, g)).grid(row=0, column=7, padx=4)
-            
-            ctk.CTkButton(row, text="Delete", width=60, fg_color="#F44336", 
-                          command=lambda gid=game['id']: delete_scheduled_game(gid)).grid(row=0, column=8, padx=4)
+        ctk.CTkLabel(row, text=game.get('team1')).grid(row=0, column=0, sticky="w", padx=8)
+        ctk.CTkLabel(row, text=game.get('team2')).grid(row=0, column=1, sticky="w", padx=8)
+        ctk.CTkLabel(row, text=game.get('venue')).grid(row=0, column=2, sticky="w", padx=8)
+        ctk.CTkLabel(row, text=game.get('date')).grid(row=0, column=3, sticky="w", padx=8)
+        ctk.CTkLabel(row, text=_season_from_iso(game.get('date'))).grid(row=0, column=4, sticky="w", padx=8)
+        
+        s1 = int(game.get('team1_score') or 0)
+        s2 = int(game.get('team2_score') or 0)
+        score_txt = f"{s1} - {s2}"
+        ctk.CTkLabel(row, text=score_txt).grid(row=0, column=5, sticky="w", padx=8)
+
+        is_fin = bool(game.get('is_final'))
+        status = "Final" if is_fin else "Active"
+        color = "#D9534F" if is_fin else "#7CFC00"
+        ctk.CTkLabel(row, text=status, text_color=color).grid(row=0, column=6, sticky="w", padx=8)
+        
+        self.button_controls.create_buttons(row, game, idx)
+
+def refresh_scheduled_games_table(table_frame):
+    display = ScheduledGamesDisplay(table_frame)
+    display.render()
 
 def delete_scheduled_game(game_id):
-    if messagebox.askyesno("Delete", "Delete this game?"):
-        sm = ScheduleManager()
-        try:
-            sm.deleteGame(game_id)
-            if refs.get('scheduled_games_table'):
-                refresh_scheduled_games_table(refs['scheduled_games_table'])
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not delete game: {e}")
+    controls = GameButtonControls(None)
+    controls.delete_logic(game_id)
+
+def show_game_details(index, game_data):
+    panel = GamePreviewPanel()
+    panel.show_details(index, game_data)
 
 def _get_scheduled_games_source():
-    try:
-        import scheduleGameTab as sgt
-        if hasattr(sgt, 'scheduled_games') and sgt.scheduled_games:
-            return sgt.scheduled_games
-    except: pass
-    return sgt.scheduled_games
+    return scheduled_games
