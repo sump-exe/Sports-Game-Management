@@ -30,6 +30,24 @@ class VenueSidebarManager:
             cur.close()
 
     def refresh_sidebar_ui(self, scroll_frame, search_var=None):
+        try:
+            parent = scroll_frame.master
+            add_btn = None
+            
+            for child in parent.winfo_children():
+                if isinstance(child, ctk.CTkButton) and "Add Venue" in child.cget("text"):
+                    add_btn = child
+                    break
+            
+            if add_btn:
+                add_btn.pack_forget()
+                scroll_frame.pack_forget()
+                
+                add_btn.pack(side="bottom", pady=8, padx=6, fill="x")
+                
+                scroll_frame.pack(side="top", fill="both", expand=True, padx=6, pady=6)
+        except Exception:
+            pass
         for btn in list(self.buttons_list):
             try:
                 btn.destroy()
@@ -68,9 +86,6 @@ class VenueSidebarManager:
             )
             b.pack(padx=8, pady=4, fill="x")
             self.buttons_list.append(b)
-            
-        if refs and 'venues_buttons' in refs:
-            refs['venues_buttons'] = self.buttons_list
 
 class VenueDetailsViewer:
     def __init__(self, parent_frame):
@@ -276,7 +291,6 @@ class VenueControlPanel:
             finally:
                 cur.close()
 
-            # Refresh Data and UI
             _sidebar_mgr.load_data()
             try:
                 _sidebar_mgr.refresh_sidebar_ui(
